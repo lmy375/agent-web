@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* Warm neutral surfaces keep the conversation in focus; colour signals state. */
+@theme {
+  --color-paper: #faf9f7;
+  --color-surface: #ffffff;
+  --color-sunken: #eeedea;
+  --color-rule: #e6e4e0;
+  --color-ink: #262624;
+  --color-ink-soft: #6b6a66;
+  --color-ink-faint: #96948e;
+  --color-running: #287ac0;
+  --color-waiting: #a66b12;
+  --color-failed: #bd433b;
+  --color-claude-code: #c96442;
+  --color-codex: #33373f;
+  --color-opencode: #0e8f7e;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "IBM Plex Sans Variable", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root { color-scheme: light; }
+html, body, #root { height: 100%; }
+#root { height: 100dvh; overflow: hidden; }
+button, select { cursor: pointer; }
+button:disabled { cursor: default; }
+* { scrollbar-width: thin; scrollbar-color: var(--color-rule) transparent; }
+.conversation-width { width: 100%; max-width: 960px; margin-inline: auto; }
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+  margin: 0;
+  /* Plex Sans sets tabular figures off by default; token counts and durations
+     sit in columns, so they are turned on everywhere. */
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible { @apply outline-2 outline-offset-2 outline-ink; }
+
+/* While the sidebar is being dragged, nothing underneath may steal the cursor
+   or start a text selection. */
+body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-select: none !important; }
+
+/* A hairline that survives fractional device pixel ratios. */
+.rule-t { box-shadow: inset 0 1px 0 var(--color-rule); }
+
+@keyframes breathe { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+.breathe { animation: breathe 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Assistant prose. The measure is capped on the container, not here. */
+.prose-agent > * + * { margin-top: 0.7em; }
+.prose-agent :is(h1, h2, h3, h4) { font-weight: 600; line-height: 1.3; }
+.prose-agent h1 { font-size: 1.15rem; }
+.prose-agent h2 { font-size: 1.05rem; }
+.prose-agent h3 { font-size: 0.975rem; }
+.prose-agent ul { list-style: disc; padding-left: 1.15rem; }
+.prose-agent ol { list-style: decimal; padding-left: 1.35rem; }
+.prose-agent li + li { margin-top: 0.25em; }
+.prose-agent code { @apply font-mono text-[0.85em] bg-sunken rounded-[3px] px-1 py-px; }
+.prose-agent pre { @apply font-mono bg-surface border border-rule rounded-xl p-4 overflow-x-auto text-[0.8rem] leading-[1.55]; }
+.prose-agent pre code { background: transparent; padding: 0; font-size: inherit; }
+.prose-agent a { @apply underline underline-offset-2 decoration-ink-faint hover:decoration-ink; }
+.prose-agent blockquote { @apply border-l-2 border-rule pl-3 text-ink-soft; }
+.prose-agent table { @apply block overflow-x-auto border-collapse text-[0.85em]; }
+.prose-agent :is(td, th) { @apply border border-rule px-2 py-1 text-left; }
+.prose-agent hr { @apply border-rule; }
