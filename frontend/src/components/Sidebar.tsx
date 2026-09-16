@@ -104,9 +104,9 @@ function ThreadRow({ thread }: { thread: ThreadSummary }) {
   const running = thread.run_state === 'running' || thread.run_state === 'starting'
   return (
     <NavLink to={`/t/${encodeURIComponent(thread.thread_id)}`} title={`${thread.title ?? t('untitled')} · ${relativeTime(locale, Date.parse(thread.updated_at))}`} className={({ isActive }) => cn('group mb-0.5 flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-ink-soft transition-colors hover:bg-sunken/70 hover:text-ink', isActive && 'bg-sunken text-ink')}>
-      <span aria-label={t(`state.${thread.run_state}`)} className={cn('h-1.5 w-1.5 shrink-0 rounded-full border border-ink-faint/45', running && 'breathe border-running bg-running', thread.run_state === 'waiting_input' && 'border-waiting bg-waiting')} />
+      <AgentMark kind={thread.agent_kind} className="h-4 w-4" />
       <span className="min-w-0 flex-1 truncate text-[13px]">{thread.title ?? t('untitled')}</span>
-      <AgentMark kind={thread.agent_kind} className="h-4 w-5 text-[8px] opacity-60 group-hover:opacity-100" />
+      <span aria-label={t(`state.${thread.run_state}`)} className={cn('h-1.5 w-1.5 shrink-0 rounded-full border border-ink-faint/45', running && 'breathe border-running bg-running', thread.run_state === 'waiting_input' && 'border-waiting bg-waiting')} />
     </NavLink>
   )
 }
