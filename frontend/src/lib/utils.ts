@@ -14,19 +14,28 @@ export function truncate(s: string, n = 80): string {
 }
 
 /**
- * A harness spells its own knobs, so they arrive lowercase -- `permission-mode`,
- * `on-request` -- and read as typos in a row of controls. Only the shown label
- * is raised; the value handed back is still the harness's own word.
+ * A harness spells its own knobs, so they arrive as parameter names --
+ * `acceptEdits`, `on-request`, `permission-mode` -- which read as typos in a row
+ * of controls. Only the shown label is rewritten; the value handed back is still
+ * the harness's own word, exactly as it was declared.
  */
 export function displayGroup<T extends { label: string; options: { label: string }[] }>(group: T): T {
   return {
     ...group,
-    label: capitalize(group.label),
-    options: group.options.map((option) => ({ ...option, label: capitalize(option.label) })),
+    label: sentence(group.label),
+    options: group.options.map((option) => ({ ...option, label: sentence(option.label) })),
   }
 }
 
-const capitalize = (label: string) => label.charAt(0).toUpperCase() + label.slice(1)
+/** `acceptEdits` -> `Accept edits`, `danger-full-access` -> `Danger full access`. */
+function sentence(label: string): string {
+  const words = label
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .trim()
+    .toLowerCase()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
 
 /** Last segment of a POSIX path; "/" for the filesystem root. */
 export function baseName(path: string): string {
