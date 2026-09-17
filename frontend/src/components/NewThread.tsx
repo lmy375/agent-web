@@ -8,7 +8,7 @@ import { AgentMark } from './AgentMark'
 import { DirectoryPicker } from './DirectoryPicker'
 import { Button } from './ui/button'
 import { Picker } from './ui/field'
-import { cn } from '@/lib/utils'
+import { cn, displayGroup } from '@/lib/utils'
 
 /** Choosing an agent, its options and a directory is the whole of starting a
  *  thread; every option here is read from the chosen agent's descriptor, and
@@ -112,7 +112,7 @@ export function NewThread({ onClose, initialCwd }: { onClose: () => void; initia
                 <Picker variant="field" title={t('model')} value={model} options={modelOptions} onChange={(next) => setOverrides((o) => ({ ...o, model: next }))} />
               </Option>
             )}
-            {groups.map((group) => (
+            {groups.map(displayGroup).map((group) => (
               <Option key={group.id} label={group.label}>
                 <Picker
                   variant="field"

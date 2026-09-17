@@ -13,6 +13,21 @@ export function truncate(s: string, n = 80): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s
 }
 
+/**
+ * A harness spells its own knobs, so they arrive lowercase -- `permission-mode`,
+ * `on-request` -- and read as typos in a row of controls. Only the shown label
+ * is raised; the value handed back is still the harness's own word.
+ */
+export function displayGroup<T extends { label: string; options: { label: string }[] }>(group: T): T {
+  return {
+    ...group,
+    label: capitalize(group.label),
+    options: group.options.map((option) => ({ ...option, label: capitalize(option.label) })),
+  }
+}
+
+const capitalize = (label: string) => label.charAt(0).toUpperCase() + label.slice(1)
+
 /** Last segment of a POSIX path; "/" for the filesystem root. */
 export function baseName(path: string): string {
   const trimmed = path.replace(/\/+$/, '')

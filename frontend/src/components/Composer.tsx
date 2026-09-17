@@ -8,7 +8,7 @@ import { imageFiles, toAttachment, toBlock, attachmentSrc, type Attachment } fro
 import { ContextMeter } from './ContextMeter'
 import { Button } from './ui/button'
 import { Picker } from './ui/field'
-import { cn } from '@/lib/utils'
+import { cn, displayGroup } from '@/lib/utils'
 
 interface ComposerProps {
   thread: ThreadSummary
@@ -247,7 +247,7 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-2 px-1">
-          {(runtime?.groups ?? []).map((group) => (
+          {(runtime?.groups ?? []).map(displayGroup).map((group) => (
             <Picker
               key={group.id}
               title={group.label}
