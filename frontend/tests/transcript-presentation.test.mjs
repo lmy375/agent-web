@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { activityStats, presentTranscript } from '../src/lib/transcriptPresentation.ts'
+import { activityStats, latestThought, presentTranscript } from '../src/lib/transcriptPresentation.ts'
 
 const tool = (id, kind = 'shell', extra = {}) => ({ type: 'tool', id, name: 'run', toolKind: kind, input: { command: `echo ${id}` }, children: [], ...extra })
 const assistant = (id, blocks, streaming = false) => ({ kind: 'assistant', id, blocks, streaming })
@@ -71,4 +71,12 @@ test('stopped turns and completed subtasks cannot keep the summary running', () 
   const nestedEntries = presentTranscript([assistant('a', [completedSubtask])])[0].entries
   assert.equal(activityStats(nestedEntries, true).running, false)
   assert.equal(activityStats(nestedEntries, true).pending, 1)
+})
+
+test('a collapsed group is labelled by the newest thought it holds', () => {
+  const rows = presentTranscript([
+    assistant('a', [thinking('Reading the build log'), tool('1'), thinking('The failure is the missing go.sum\n\nSo the fix is to commit it'), tool('2')]),
+  ])
+  assert.equal(latestThought(rows[0].entries), 'So the fix is to commit it')
+  assert.equal(latestThought(presentTranscript([assistant('b', [tool('1')])])[0].entries), '')
 })

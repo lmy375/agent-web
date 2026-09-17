@@ -67,7 +67,10 @@ type client struct {
 }
 
 func dial(bin, cwd string, h rpcHandlers) (*client, error) {
-	cmd := exec.Command(bin, "app-server")
+	// Ask for summarized reasoning: the app-server otherwise streams none at
+	// all and the UI has nothing to show. Claude's --thinking-display is the
+	// same ask, and there is no per-turn knob for it.
+	cmd := exec.Command(bin, "app-server", "-c", "model_reasoning_summary=detailed")
 	cmd.Dir = cwd
 	cmd.Env = os.Environ()
 

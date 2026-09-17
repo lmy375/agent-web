@@ -49,13 +49,18 @@ type thread struct {
 	// OpenCode announces a finished message without repeating its content and
 	// the protocol's assistant_message has to carry the final blocks.
 	assembling map[string][]part
-	tools      map[string]bool
+	// blocks numbers each message's parts in the order they are first seen.
+	// OpenCode numbers nothing itself, and two blocks claiming one index make
+	// the client drop whichever arrives second.
+	blocks map[string]map[string]int
+	tools  map[string]bool
 }
 
 func newThread() *thread {
 	return &thread{
 		state: protocol.StateIdle, pending: map[string]protocol.InteractionRequest{},
-		parts: map[string]string{}, assembling: map[string][]part{}, tools: map[string]bool{},
+		parts: map[string]string{}, assembling: map[string][]part{},
+		blocks: map[string]map[string]int{}, tools: map[string]bool{},
 	}
 }
 

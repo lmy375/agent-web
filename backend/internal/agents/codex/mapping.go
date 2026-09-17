@@ -62,10 +62,12 @@ var itemToolKinds = map[string]protocol.ToolKind{
 // Only the fields this build renders are named; the rest stay in Raw so a tool
 // card can still show the harness's own object.
 type item struct {
-	Type    string `json:"type"`
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	Summary string `json:"summary"`
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Text string `json:"text"`
+	// reasoning: the summary the UI is meant to show arrives as a list of
+	// sections, and decoding it as anything else fails the whole item.
+	Summary []string `json:"summary"`
 	// userMessage
 	ClientID string `json:"clientId"`
 	Content  []struct {
@@ -140,6 +142,16 @@ func (i item) toolOutput() (string, bool) {
 		return i.Text, failed
 	}
 	return string(i.Raw), failed
+}
+
+// reasoningText is what a reasoning item has to show. Codex puts the summary in
+// `summary` and leaves `content` for the raw chain, which only some accounts
+// are served, so an item with neither is one this client cannot render.
+func (i item) reasoningText() string {
+	if joined := strings.Join(i.Summary, "\n\n"); strings.TrimSpace(joined) != "" {
+		return joined
+	}
+	return i.textContent()
 }
 
 func (i item) textContent() string {

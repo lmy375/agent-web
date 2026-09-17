@@ -185,8 +185,10 @@ func (b *Backend) onItemCompleted(threadID string, t *thread, params json.RawMes
 		b.deps.Publish(protocol.AssistantMessage(threadID, parsed.ID, blocks, nil))
 
 	case parsed.Type == "reasoning":
-		blocks := []protocol.ContentBlock{protocol.Thinking(parsed.textContent())}
-		b.deps.Publish(protocol.AssistantMessage(threadID, parsed.ID, blocks, nil))
+		if text := parsed.reasoningText(); text != "" {
+			blocks := []protocol.ContentBlock{protocol.Thinking(text)}
+			b.deps.Publish(protocol.AssistantMessage(threadID, parsed.ID, blocks, nil))
+		}
 
 	case parsed.Type == "contextCompaction":
 		b.deps.Publish(protocol.ContextBoundary(threadID, protocol.CompactAuto, nil))

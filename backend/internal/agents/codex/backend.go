@@ -514,7 +514,11 @@ func (b *Backend) transcriptEntries(threadID string, raw json.RawMessage) []prot
 		blocks := []protocol.ContentBlock{protocol.Text(parsed.textContent())}
 		return []protocol.TranscriptEntry{protocol.AssistantMessage(threadID, parsed.ID, blocks, nil)}
 	case parsed.Type == "reasoning":
-		blocks := []protocol.ContentBlock{protocol.Thinking(parsed.textContent())}
+		text := parsed.reasoningText()
+		if text == "" {
+			return nil
+		}
+		blocks := []protocol.ContentBlock{protocol.Thinking(text)}
 		return []protocol.TranscriptEntry{protocol.AssistantMessage(threadID, parsed.ID, blocks, nil)}
 	case parsed.Type == "contextCompaction":
 		return []protocol.TranscriptEntry{protocol.ContextBoundary(threadID, protocol.CompactAuto, nil)}

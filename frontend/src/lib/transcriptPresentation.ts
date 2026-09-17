@@ -43,6 +43,19 @@ export function presentTranscript(items: Item[]): TranscriptRow[] {
   return rows
 }
 
+/** The one line a collapsed group shows: the most recent thought, which while
+ *  the group is running reads as a live status line. Only the newest line of it
+ *  is taken -- the rest is what expanding the group is for. */
+export function latestThought(entries: ActivityEntry[]): string {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]
+    if (entry.kind !== 'thinking') continue
+    const line = entry.text.split('\n').map((part) => part.trim()).filter(Boolean).at(-1)
+    if (line) return line
+  }
+  return ''
+}
+
 export function activityStats(entries: ActivityEntry[], active = false) {
   const stats = { tools: 0, commands: 0, failed: 0, pending: 0, running: false }
   function visit(tool: ToolBlock, mayRun: boolean) {

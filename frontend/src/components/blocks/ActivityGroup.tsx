@@ -1,7 +1,7 @@
 import { ChevronRight, LoaderCircle, Terminal, Wrench } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useI18n } from '@/i18n'
-import { activityStats, type ActivityEntry } from '@/lib/transcriptPresentation'
+import { activityStats, latestThought, type ActivityEntry } from '@/lib/transcriptPresentation'
 import { cn } from '@/lib/utils'
 import type { Item } from '@/store/transcript'
 import { Thinking } from './Thinking'
@@ -28,6 +28,9 @@ export function ActivityGroup({ entries, active, renderChildren }: {
     ? running ? 'activity.runningCommands' : 'activity.commands'
     : running ? 'activity.runningTools' : 'activity.tools'
   const summary = t(stats.tools === 1 ? `${summaryKey}One` : summaryKey, { count: stats.tools })
+  // Collapsed, the group would otherwise bury the reasoning entirely; open, the
+  // same text is already the first thing inside it.
+  const thought = open ? '' : latestThought(entries)
 
   return (
     <section className="my-5 min-w-0">
@@ -42,6 +45,7 @@ export function ActivityGroup({ entries, active, renderChildren }: {
         <span>{summary}</span>
         {stats.failed > 0 && <span className="text-xs text-failed">{t('activity.failures', { count: stats.failed })}</span>}
         {!active && stats.pending > 0 && <span className="text-xs text-ink-faint">{t('activity.incomplete', { count: stats.pending })}</span>}
+        {thought && <span className="min-w-0 flex-1 truncate text-xs text-ink-faint">· {thought}</span>}
         <ChevronRight size={14} className={cn('shrink-0 transition-transform', open && 'rotate-90')} aria-hidden="true" />
       </button>
       <div id={panelId} hidden={!open} className="mt-1 space-y-1 border-l border-rule pl-3 md:pl-4">

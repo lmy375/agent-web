@@ -102,7 +102,7 @@ func (b *Backend) onPartUpdated(threadID string, t *thread, properties json.RawM
 		t.tools[p.CallID] = true
 		t.mu.Unlock()
 		if !started {
-			b.deps.Publish(protocol.ToolUseStart(threadID, p.MessageID, 0, p.CallID, p.Tool, toolKind(p.Tool), nil))
+			b.deps.Publish(protocol.ToolUseStart(threadID, p.MessageID, t.blockIndex(p.MessageID, p.ID), p.CallID, p.Tool, toolKind(p.Tool), nil))
 			input := json.RawMessage("{}")
 			if p.State != nil && len(p.State.Input) > 0 {
 				input = p.State.Input
@@ -132,14 +132,15 @@ func (b *Backend) onPartDelta(threadID string, t *thread, properties json.RawMes
 	t.mu.Lock()
 	kind := t.parts[payload.PartID]
 	t.mu.Unlock()
+	index := t.blockIndex(payload.MessageID, payload.PartID)
 	if kind == "reasoning" {
-		b.deps.Publish(protocol.ThinkingDelta(threadID, payload.MessageID, 0, payload.Delta, nil))
+		b.deps.Publish(protocol.ThinkingDelta(threadID, payload.MessageID, index, payload.Delta, nil))
 		return
 	}
 	// A delta for a part we have not seen settled yet is text: that is the only
 	// field OpenCode streams before the part itself arrives.
 	if kind == "text" || payload.Field == "text" {
-		b.deps.Publish(protocol.TextDelta(threadID, payload.MessageID, 0, payload.Delta, nil))
+		b.deps.Publish(protocol.TextDelta(threadID, payload.MessageID, index, payload.Delta, nil))
 	}
 }
 
@@ -328,5 +329,24 @@ func (t *thread) take(messageID string) []part {
 	defer t.mu.Unlock()
 	parts := t.assembling[messageID]
 	delete(t.assembling, messageID)
+	delete(t.blocks, messageID)
 	return parts
+}
+
+// blockIndex is where one part's content belongs in its message, assigned on
+// first sight because OpenCode itself numbers nothing.
+func (t *thread) blockIndex(messageID, partID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	byPart := t.blocks[messageID]
+	if byPart == nil {
+		byPart = map[string]int{}
+		t.blocks[messageID] = byPart
+	}
+	if index, ok := byPart[partID]; ok {
+		return index
+	}
+	index := len(byPart)
+	byPart[partID] = index
+	return index
 }

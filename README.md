@@ -55,14 +55,23 @@ works: the same transcript, the same permission card, the same composer.
 - Node 22 and [pnpm](https://pnpm.io/)
 - At least one agent CLI, signed in:
 
-| Agent | Install | Sign in | Check |
-| --- | --- | --- | --- |
-| Claude Code | `npm i -g @anthropic-ai/claude-code` | `claude login` | `claude auth status` |
-| Codex | `npm i -g @openai/codex` | `codex login` | `codex doctor` |
-| OpenCode | `npm i -g opencode-ai` | `opencode auth login` | `opencode models` |
+| Agent | Install | Sign in | Check | Built against |
+| --- | --- | --- | --- | --- |
+| Claude Code | `npm i -g @anthropic-ai/claude-code` | `claude login` | `claude auth status` | 2.1.270 |
+| Codex | `npm i -g @openai/codex` | `codex login` | `codex doctor` | 0.153.2 |
+| OpenCode | `npm i -g opencode-ai` | `opencode auth login` | `opencode models` | 1.18.31 |
 
 An agent that is missing or signed out still appears in the UI, greyed out with
 the reason — the others keep working.
+
+**Built against** is the version each adapter was written and verified on. None
+of the three publishes a stable wire protocol: flags, JSON-RPC notification
+names and event fields move between releases, and the adapters read them
+directly. So a much newer CLI usually keeps working and loses one specific thing
+quietly — reasoning stops appearing, a tool card stops being drawn — rather than
+failing outright. When something goes missing after an upgrade, suspect the
+adapter for that kind first; `AGENT_WEB_E2E=1 go test ./internal/server/ -v`
+drives Claude Code against the real CLI.
 
 ## Quick start
 
@@ -111,9 +120,11 @@ Consecutive tool calls and reasoning are grouped into a collapsed activity
 summary, even when they arrive in separate agent messages. Open the summary to
 browse individual calls, then open a call to see its input, output, images and
 subtasks. Replies, user messages, errors and approval requests remain visible.
-Activity summaries show running, failed and missing-result states; reasoning
-previews use an excerpt of the original text. All controls support Chinese and
-English and can be expanded with the keyboard.
+Activity summaries show running, failed and missing-result states, and carry the
+newest line of reasoning they hold — while the turn runs that reads as a live
+status line, and it is the only reasoning a collapsed group would otherwise
+show. Reasoning previews use an excerpt of the original text. All controls
+support Chinese and English and can be expanded with the keyboard.
 
 ## Interface language
 
@@ -209,10 +220,13 @@ is exactly where a permission prompt would be.
   `claude --print --input-format stream-json` plus the control channel
   multiplexed onto the same pipes (`initialize`, `interrupt`, `set_model`,
   `get_context_usage`, and the CLI's `can_use_tool` prompts). One subprocess per
-  live thread, reaped when idle, resumed with `--resume`.
+  live thread, reaped when idle, resumed with `--resume`. `--thinking-display
+  summarized` is what makes reasoning arrive with text in it.
 - [backend/internal/agents/codex](backend/internal/agents/codex) — one
   `codex app-server` for every thread, JSON-RPC over stdio, notifications routed
-  by `threadId` and approvals answered as JSON-RPC responses.
+  by `threadId` and approvals answered as JSON-RPC responses. Started with
+  `-c model_reasoning_summary=detailed`, without which the server streams no
+  reasoning at all.
 - [backend/internal/agents/opencode](backend/internal/agents/opencode) — a
   hosted `opencode serve`, one SSE subscription for all threads, `?directory=`
   scoping each call to its thread's project.
