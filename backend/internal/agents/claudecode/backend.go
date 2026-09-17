@@ -56,6 +56,7 @@ type Backend struct {
 
 	runtimeMu   sync.Mutex
 	runtime     protocol.AgentRuntimeInfo
+	resolved    []resolvedModel
 	runtimeAt   time.Time
 	runtimeOnce bool
 
@@ -157,6 +158,9 @@ func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
 		return info
 	}
 	info.Models = server.modelOptions()
+	// RuntimeInfo holds runtimeMu across this call, so the resolved models and
+	// the list they belong to are replaced together.
+	b.resolved = server.resolvedModels()
 	info.Groups = server.optionGroups()
 	info.Commands = server.slashCommands()
 	if server.CurrentPermissionMode != "" {
@@ -203,6 +207,28 @@ func (b *Backend) launcher(rec chat.ThreadRecord, resume bool) launch {
 	return launch{bin: b.opts.Bin, args: args, cwd: rec.Cwd, env: b.env()}
 }
 
+// selectedModel names, in the vocabulary the model picker uses, the model an
+// init message reported by its resolved id. A selection that already resolves
+// to that id stands: `default` and `opus[1m]` are the same model, and the id
+// alone cannot tell them apart. Any other id means the CLI came up with a
+// different model than the row asked for, so the row follows it. An id from no
+// known model leaves the row's selection alone.
+func (b *Backend) selectedModel(reported, current string) string {
+	b.runtimeMu.Lock()
+	defer b.runtimeMu.Unlock()
+	for _, m := range b.resolved {
+		if m.value == current && m.model == reported {
+			return current
+		}
+	}
+	for _, m := range b.resolved {
+		if m.model == reported {
+			return m.value
+		}
+	}
+	return current
+}
+
 // --- threads ---
 
 func (b *Backend) session(threadID string) (*session, bool) {
@@ -218,7 +244,7 @@ func (b *Backend) orCreate(threadID string) *session {
 	if s, ok := b.sessions[threadID]; ok {
 		return s
 	}
-	s := newSession(threadID, b.deps, b.launcher)
+	s := newSession(threadID, b.deps, b.launcher, b.selectedModel)
 	b.sessions[threadID] = s
 	return s
 }

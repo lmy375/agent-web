@@ -268,6 +268,7 @@ type serverInfo struct {
 	} `json:"commands"`
 	Models []struct {
 		Value                 string   `json:"value"`
+		ResolvedModel         string   `json:"resolvedModel"`
 		DisplayName           string   `json:"displayName"`
 		Description           string   `json:"description"`
 		SupportedEffortLevels []string `json:"supportedEffortLevels"`
@@ -287,6 +288,25 @@ func (s serverInfo) modelOptions() []protocol.ModelOption {
 			option.Description = &description
 		}
 		out = append(out, option)
+	}
+	return out
+}
+
+// resolvedModel pairs one selectable model value with the model the CLI
+// actually runs for it.
+type resolvedModel struct {
+	value string
+	model string
+}
+
+// resolvedModels keeps the model list's order, which decides which value a
+// resolved model is named by when several share it.
+func (s serverInfo) resolvedModels() []resolvedModel {
+	out := make([]resolvedModel, 0, len(s.Models))
+	for _, m := range s.Models {
+		if m.ResolvedModel != "" {
+			out = append(out, resolvedModel{value: m.Value, model: m.ResolvedModel})
+		}
 	}
 	return out
 }

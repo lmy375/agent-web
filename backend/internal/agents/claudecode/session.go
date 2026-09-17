@@ -18,6 +18,9 @@ type session struct {
 	threadID string
 	deps     chat.Deps
 	launcher func(rec chat.ThreadRecord, resume bool) launch
+	// selectedModel turns the model an init message reports into the value the
+	// picker offers for it.
+	selectedModel func(reported, current string) string
 
 	mu      sync.Mutex
 	proc    *process
@@ -42,16 +45,17 @@ type session struct {
 	assembled map[string][]protocol.ContentBlock
 }
 
-func newSession(threadID string, deps chat.Deps, launcher func(chat.ThreadRecord, bool) launch) *session {
+func newSession(threadID string, deps chat.Deps, launcher func(chat.ThreadRecord, bool) launch, selectedModel func(string, string) string) *session {
 	return &session{
-		threadID:   threadID,
-		deps:       deps,
-		launcher:   launcher,
-		state:      protocol.StateIdle,
-		pending:    map[string]*pending{},
-		blockTools: map[int]string{},
-		assembled:  map[string][]protocol.ContentBlock{},
-		lastActive: time.Now(),
+		threadID:      threadID,
+		deps:          deps,
+		launcher:      launcher,
+		selectedModel: selectedModel,
+		state:         protocol.StateIdle,
+		pending:       map[string]*pending{},
+		blockTools:    map[int]string{},
+		assembled:     map[string][]protocol.ContentBlock{},
+		lastActive:    time.Now(),
 	}
 }
 
@@ -589,8 +593,13 @@ func (s *session) onSystem(raw json.RawMessage) {
 				rec.NativeID = env.SessionID
 			}
 			if env.Model != "" {
-				model := env.Model
-				rec.Options.Model = &model
+				current := ""
+				if rec.Options.Model != nil {
+					current = *rec.Options.Model
+				}
+				if model := s.selectedModel(env.Model, current); model != "" {
+					rec.Options.Model = &model
+				}
 			}
 			if env.PermissionMode != "" {
 				rec.Options.Set("permission-mode", modeAsFlag(env.PermissionMode))
