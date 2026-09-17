@@ -74,7 +74,8 @@ export function subscribe(
     'thread_updated', 'thread_deleted', 'context_usage', 'turn_started', 'turn_finished',
     'user_message', 'assistant_message', 'text_delta', 'thinking_delta',
     'tool_use_start', 'tool_input_delta', 'tool_use_end', 'tool_output_delta', 'tool_result',
-    'interaction_request', 'interaction_resolved', 'context_boundary', 'notice', 'error',
+    'interaction_request', 'interaction_resolved', 'context_boundary',
+    'background_tasks', 'background_task_finished', 'notice', 'error',
   ]
   const listener = (event: MessageEvent<string>) => handlers.onEvent(JSON.parse(event.data) as ServerEvent)
   for (const name of names) source.addEventListener(name, listener as EventListener)

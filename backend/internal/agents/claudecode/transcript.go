@@ -142,6 +142,9 @@ func transcriptEntries(threadID string, line transcriptLine) []protocol.Transcri
 			if entries, ok := localCommandEntries(threadID, line, blocks[0].Text); ok {
 				return entries
 			}
+			if entry, ok := taskNotificationEntry(threadID, line, blocks[0].Text); ok {
+				return []protocol.TranscriptEntry{entry}
+			}
 		}
 		out := []protocol.TranscriptEntry{}
 		for _, block := range blocks {
@@ -182,7 +185,31 @@ var (
 	localCommandCaveat = regexp.MustCompile(`(?s)^<local-command-caveat>.*</local-command-caveat>$`)
 	localCommandPrompt = regexp.MustCompile(`(?s)^<command-name>(.*?)</command-name>\s*<command-message>.*?</command-message>\s*<command-args>(.*?)</command-args>$`)
 	localCommandOutput = regexp.MustCompile(`(?s)^<local-command-(stdout|stderr)>(.*)</local-command-(stdout|stderr)>$`)
+
+	// A finished background task reaches the live stream as a system message
+	// and the file as the prompt the CLI fed itself; both become the same entry.
+	taskNotification = regexp.MustCompile(`(?s)^<task-notification>.*</task-notification>$`)
+	taskNotifyField  = regexp.MustCompile(`(?s)<(task-id|status|summary)>(.*?)</(?:task-id|status|summary)>`)
 )
+
+func taskNotificationEntry(threadID string, line transcriptLine, text string) (protocol.TranscriptEntry, bool) {
+	text = strings.TrimSpace(text)
+	if !taskNotification.MatchString(text) {
+		return nil, false
+	}
+	var taskID, status, summary string
+	for _, field := range taskNotifyField.FindAllStringSubmatch(text, -1) {
+		switch field[1] {
+		case "task-id":
+			taskID = strings.TrimSpace(field[2])
+		case "status":
+			status = strings.TrimSpace(field[2])
+		case "summary":
+			summary = strings.TrimSpace(field[2])
+		}
+	}
+	return protocol.BackgroundTaskFinished(threadID, taskID, taskStatus(status), summary).At(line.Timestamp), true
+}
 
 func localCommandEntries(threadID string, line transcriptLine, text string) ([]protocol.TranscriptEntry, bool) {
 	text = strings.TrimSpace(text)

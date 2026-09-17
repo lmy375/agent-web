@@ -116,6 +116,9 @@ function ThreadRow({ thread, open }: { thread: ThreadSummary; open: boolean }) {
   const remove = useWorkspace((s) => s.remove)
   const [confirming, setConfirming] = useState(false)
   const running = thread.run_state === 'running' || thread.run_state === 'starting'
+  // A thread between turns with background work in flight is still busy, and
+  // the hollow dot says the harness is working with nobody's turn open.
+  const background = thread.run_state === 'background'
 
   async function onDelete() {
     await remove(thread.thread_id)
@@ -138,6 +141,7 @@ function ThreadRow({ thread, open }: { thread: ThreadSummary; open: boolean }) {
           className={cn(
             'block h-1.5 w-1.5 rounded-full border border-ink-faint/45',
             running && 'breathe border-running bg-running',
+            background && 'breathe border-running',
             thread.run_state === 'waiting_input' && 'border-waiting bg-waiting',
           )}
         />

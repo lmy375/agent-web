@@ -82,8 +82,40 @@ func ContextUsageChanged(threadID string, u ContextUsage) ContextUsageEvent {
 	return ContextUsageEvent{newBase("context_usage", threadID), u}
 }
 
+// BackgroundTasksEvent carries every live background task after a change.
+// Claude: background_tasks_changed. The payload replaces the client's set
+// wholesale, so a missed frame cannot leave a task on screen forever. The set
+// belongs to one harness process, which is why a restart publishes an empty
+// one rather than leaving the last set standing.
+type BackgroundTasksEvent struct {
+	EventBase
+	Tasks []BackgroundTask `json:"tasks"`
+}
+
+func BackgroundTasks(threadID string, tasks []BackgroundTask) BackgroundTasksEvent {
+	return BackgroundTasksEvent{newBase("background_tasks", threadID), tasks}
+}
+
+// BackgroundTaskFinishedEvent is one task reaching a terminal state. Claude:
+// task_notification, which is also the moment it starts a turn of its own to
+// read the result, so the transcript keeps this to say why it resumed.
+type BackgroundTaskFinishedEvent struct {
+	EventBase
+	TaskID  string     `json:"task_id"`
+	Status  TaskStatus `json:"status"`
+	Summary string     `json:"summary"`
+}
+
+func (BackgroundTaskFinishedEvent) transcriptEntry() {}
+
+func BackgroundTaskFinished(threadID, taskID string, status TaskStatus, summary string) BackgroundTaskFinishedEvent {
+	return BackgroundTaskFinishedEvent{newBase("background_task_finished", threadID), taskID, status, summary}
+}
+
 // TurnStartedEvent opens a turn. Claude: emitted by the session before the
-// first message of a prompt. Codex: turn/started.
+// first message of a prompt, and again when the CLI opens a turn of its own to
+// read a finished background task, where the client_message_id is empty.
+// Codex: turn/started.
 type TurnStartedEvent struct {
 	EventBase
 	ClientMessageID string `json:"client_message_id"`
@@ -250,8 +282,8 @@ func StreamError(threadID string, code StreamErrorCode, message string, fatal bo
 }
 
 // TranscriptEntry is what both harnesses persist: user messages, assistant
-// messages, tool results and context boundaries. System entries are the
-// backend's to filter.
+// messages, tool results, context boundaries and finished background tasks.
+// System entries are the backend's to filter.
 type TranscriptEntry interface {
 	ServerEvent
 	transcriptEntry()
@@ -305,3 +337,8 @@ func (e UserMessageEvent) At(ts time.Time) UserMessageEvent           { e.Ts = t
 func (e AssistantMessageEvent) At(ts time.Time) AssistantMessageEvent { e.Ts = ts; return e }
 func (e ToolResultEvent) At(ts time.Time) ToolResultEvent             { e.Ts = ts; return e }
 func (e ContextBoundaryEvent) At(ts time.Time) ContextBoundaryEvent   { e.Ts = ts; return e }
+
+func (e BackgroundTaskFinishedEvent) At(ts time.Time) BackgroundTaskFinishedEvent {
+	e.Ts = ts
+	return e
+}

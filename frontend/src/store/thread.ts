@@ -3,7 +3,7 @@ import { LocalizedError, type DisplayError } from '@/i18n/core'
 import { create } from 'zustand'
 import { api, subscribe } from '@/lib/api'
 import type {
-  ClientCommand, ContextUsage, ImageBlock, InteractionDecision, InteractionRequest,
+  BackgroundTask, ClientCommand, ContextUsage, ImageBlock, InteractionDecision, InteractionRequest,
   ServerEvent, ThreadSummary, TurnSummary, UserBlock,
 } from './protocol'
 import { applyEvent, dropLocalPrompt, emptyTranscript, localPrompt, prependHistory, type Transcript } from './transcript'
@@ -13,6 +13,8 @@ interface ThreadState {
   summary: ThreadSummary | null
   transcript: Transcript
   pending: InteractionRequest[]
+  /** Every background task the harness is carrying; each event replaces the set. */
+  backgroundTasks: BackgroundTask[]
   contextUsage: ContextUsage | null
   lastTurn: TurnSummary | null
   /** Older history exists; the transcript header offers to load it. */
@@ -30,6 +32,7 @@ interface ThreadState {
   send: (command: ClientCommand) => Promise<boolean>
   prompt: (text: string, images: ImageBlock[]) => Promise<boolean>
   respond: (requestID: string, decision: InteractionDecision) => Promise<boolean>
+  stopTask: (taskID: string) => Promise<boolean>
   loadOlder: () => Promise<void>
   clearError: () => void
 }
@@ -52,6 +55,7 @@ export const useThread = create<ThreadState>((set, get) => ({
   summary: null,
   transcript: emptyTranscript(),
   pending: [],
+  backgroundTasks: [],
   contextUsage: null,
   lastTurn: null,
   olderCursor: null,
@@ -66,8 +70,9 @@ export const useThread = create<ThreadState>((set, get) => ({
    */
   open(id) {
     set({
-      id, summary: null, transcript: emptyTranscript(), pending: [], contextUsage: null,
-      lastTurn: null, olderCursor: null, loading: true, prompting: false, error: null,
+      id, summary: null, transcript: emptyTranscript(), pending: [], backgroundTasks: [],
+      contextUsage: null, lastTurn: null, olderCursor: null, loading: true, prompting: false,
+      error: null,
     })
 
     const unsubscribe = subscribe(id, {
@@ -89,6 +94,9 @@ export const useThread = create<ThreadState>((set, get) => ({
           case 'interaction_resolved':
             set({ pending: get().pending.filter((r) => r.request_id !== event.request_id) })
             break
+          case 'background_tasks':
+            set({ backgroundTasks: event.tasks })
+            break
           default:
             set({ transcript: applyEvent(get().transcript, event) })
         }
@@ -105,6 +113,7 @@ export const useThread = create<ThreadState>((set, get) => ({
         set({
           summary: detail.summary,
           pending: detail.pending,
+          backgroundTasks: detail.background_tasks,
           contextUsage: detail.context_usage,
           lastTurn: detail.last_turn,
           transcript: prependHistory(get().transcript, page.entries),
@@ -157,6 +166,10 @@ export const useThread = create<ThreadState>((set, get) => ({
 
   respond(requestID, decision) {
     return get().send({ type: 'interaction_response', request_id: requestID, decision })
+  },
+
+  stopTask(taskID) {
+    return get().send({ type: 'stop_task', task_id: taskID })
   },
 
   clearError() {

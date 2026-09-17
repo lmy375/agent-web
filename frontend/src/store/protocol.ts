@@ -5,7 +5,8 @@
  */
 
 export type AgentKind = 'claude_code' | 'codex' | 'opencode'
-export type RunState = 'starting' | 'idle' | 'running' | 'waiting_input'
+export type RunState = 'starting' | 'idle' | 'running' | 'waiting_input' | 'background'
+export type TaskStatus = 'completed' | 'failed' | 'stopped'
 export type TurnStatus = 'completed' | 'interrupted' | 'failed'
 export type ToolKind =
   | 'shell' | 'file_edit' | 'file_write' | 'file_read' | 'search'
@@ -49,11 +50,23 @@ export interface TurnSummary {
   cost_usd: number | null
 }
 
+/** One piece of work the harness carries outside a turn: a backgrounded shell
+ *  command, a subagent, a workflow. Ambient tasks are housekeeping and are
+ *  listed without counting as work the thread is doing. */
+export interface BackgroundTask {
+  task_id: string
+  /** The harness's own vocabulary, e.g. local_bash, local_agent, local_workflow. */
+  task_type: string
+  description: string
+  ambient: boolean
+}
+
 export interface ThreadDetail {
   summary: ThreadSummary
   pending: InteractionRequest[]
   context_usage: ContextUsage | null
   last_turn: TurnSummary | null
+  background_tasks: BackgroundTask[]
 }
 
 export interface ThreadList {
@@ -193,6 +206,8 @@ export type ServerEvent =
   | (EventBase & { type: 'interaction_request'; request: InteractionRequest })
   | (EventBase & { type: 'interaction_resolved'; request_id: string; decision: InteractionDecision | null })
   | (EventBase & { type: 'context_boundary'; reason: 'auto_compaction' | 'manual_compaction'; tokens_before: number | null })
+  | (EventBase & { type: 'background_tasks'; tasks: BackgroundTask[] })
+  | (EventBase & { type: 'background_task_finished'; task_id: string; status: TaskStatus; summary: string })
   | (EventBase & { type: 'notice'; kind: 'rate_limit' | 'account'; message: string })
   | (EventBase & { type: 'error'; code: StreamErrorCode; message: string; fatal: boolean })
 
@@ -203,7 +218,7 @@ export type StreamErrorCode =
 /** What both harnesses persist. A page of these renders exactly like the stream. */
 export type TranscriptEntry = Extract<
   ServerEvent,
-  { type: 'user_message' | 'assistant_message' | 'tool_result' | 'context_boundary' }
+  { type: 'user_message' | 'assistant_message' | 'tool_result' | 'context_boundary' | 'background_task_finished' }
 >
 
 export interface TranscriptPage {
@@ -219,3 +234,4 @@ export type ClientCommand =
   | { type: 'steer'; text: string }
   | { type: 'set_options'; options: Partial<ThreadOptions> }
   | { type: 'interaction_response'; request_id: string; decision: InteractionDecision }
+  | { type: 'stop_task'; task_id: string }

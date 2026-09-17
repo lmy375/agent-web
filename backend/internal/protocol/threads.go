@@ -127,14 +127,30 @@ func (s ThreadSummary) Keyset() ThreadKeyset {
 	return ThreadKeyset{UpdatedAt: s.UpdatedAt, ThreadID: s.ThreadID}
 }
 
+// BackgroundTask is one piece of work the harness carries outside a turn: a
+// backgrounded shell command, a subagent, a workflow. Claude reports the whole
+// live set on every membership change, so this is always current rather than
+// assembled from start and end events.
+type BackgroundTask struct {
+	TaskID string `json:"task_id"`
+	// TaskType is the harness's own vocabulary: Claude spells a backgrounded
+	// Bash call local_bash, a subagent local_agent, a workflow local_workflow.
+	TaskType    string `json:"task_type"`
+	Description string `json:"description"`
+	// Ambient tasks are housekeeping -- watchers and the like -- and are shown
+	// in the task list without counting as work the thread is doing.
+	Ambient bool `json:"ambient"`
+}
+
 // ThreadDetail is what a client fetches after opening /events: the summary plus
-// the live state the transcript does not hold. None of these three are events
-// in any harness; they are current values, so they are a resource.
+// the live state the transcript does not hold. None of these are events in any
+// harness; they are current values, so they are a resource.
 type ThreadDetail struct {
-	Summary      ThreadSummary        `json:"summary"`
-	Pending      []InteractionRequest `json:"pending"`
-	ContextUsage *ContextUsage        `json:"context_usage"`
-	LastTurn     *TurnSummary         `json:"last_turn"`
+	Summary         ThreadSummary        `json:"summary"`
+	Pending         []InteractionRequest `json:"pending"`
+	ContextUsage    *ContextUsage        `json:"context_usage"`
+	LastTurn        *TurnSummary         `json:"last_turn"`
+	BackgroundTasks []BackgroundTask     `json:"background_tasks"`
 }
 
 type ThreadList struct {

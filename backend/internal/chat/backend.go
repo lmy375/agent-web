@@ -16,9 +16,10 @@ import (
 // the last token accounting, the last turn. Every field is a current value
 // rather than an event, which is why ThreadDetail is a resource.
 type LiveState struct {
-	Pending      []protocol.InteractionRequest
-	ContextUsage *protocol.ContextUsage
-	LastTurn     *protocol.TurnSummary
+	Pending         []protocol.InteractionRequest
+	ContextUsage    *protocol.ContextUsage
+	LastTurn        *protocol.TurnSummary
+	BackgroundTasks []protocol.BackgroundTask
 }
 
 // Backend is what one agent kind implements. Every method takes a thread that
@@ -61,6 +62,9 @@ type Backend interface {
 	// to the request kind; a request that resolved in between is still this
 	// backend's INTERACTION_NOT_PENDING to raise.
 	Respond(ctx context.Context, threadID, requestID string, d protocol.InteractionDecision) error
+	// StopTask stops one background task. Only Claude carries background work
+	// of its own; the rest embed NoBackgroundTasks.
+	StopTask(ctx context.Context, threadID, taskID string) error
 
 	// Discard stops any process for the thread and removes harness-side state.
 	Discard(ctx context.Context, rec ThreadRecord) error
@@ -73,6 +77,14 @@ type NoSteer struct{ AgentKind protocol.AgentKind }
 
 func (n NoSteer) Steer(context.Context, string, string) error {
 	return protocol.Errorf(protocol.CodeCapabilityUnsupported, "%s cannot steer a turn", n.AgentKind)
+}
+
+// NoBackgroundTasks is embedded by a backend whose harness runs nothing outside
+// a turn, so its threads never report a task to stop.
+type NoBackgroundTasks struct{ AgentKind protocol.AgentKind }
+
+func (n NoBackgroundTasks) StopTask(context.Context, string, string) error {
+	return protocol.Errorf(protocol.CodeCapabilityUnsupported, "%s has no background tasks", n.AgentKind)
 }
 
 // Deps is what the shell hands a backend: a way to stream an event and a way to

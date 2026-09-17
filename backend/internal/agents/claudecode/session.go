@@ -26,12 +26,18 @@ type session struct {
 	proc    *process
 	state   protocol.ThreadRunState
 	pending map[string]*pending
-	// turn is the client_message_id of the running turn, empty when idle.
+	// turn is the client_message_id of the running turn, empty for a turn the
+	// CLI opened by itself to read a finished background task; running is the
+	// fact that a turn is under way at all.
 	turn         string
+	running      bool
 	interrupted  bool
 	contextUsage *protocol.ContextUsage
 	lastTurn     *protocol.TurnSummary
 	lastActive   time.Time
+	// backgroundTasks is the live set the CLI last reported. It belongs to one
+	// process, so a restart empties it and the next change repopulates it.
+	backgroundTasks []protocol.BackgroundTask
 	// effort the live process was launched with; changing it needs a restart
 	// because it is a CLI flag rather than a control request.
 	launchedEffort string
@@ -47,15 +53,16 @@ type session struct {
 
 func newSession(threadID string, deps chat.Deps, launcher func(chat.ThreadRecord, bool) launch, selectedModel func(string, string) string) *session {
 	return &session{
-		threadID:      threadID,
-		deps:          deps,
-		launcher:      launcher,
-		selectedModel: selectedModel,
-		state:         protocol.StateIdle,
-		pending:       map[string]*pending{},
-		blockTools:    map[int]string{},
-		assembled:     map[string][]protocol.ContentBlock{},
-		lastActive:    time.Now(),
+		threadID:        threadID,
+		deps:            deps,
+		launcher:        launcher,
+		selectedModel:   selectedModel,
+		state:           protocol.StateIdle,
+		pending:         map[string]*pending{},
+		blockTools:      map[int]string{},
+		assembled:       map[string][]protocol.ContentBlock{},
+		backgroundTasks: []protocol.BackgroundTask{},
+		lastActive:      time.Now(),
 	}
 }
 
@@ -71,6 +78,23 @@ func (s *session) setState(state protocol.ThreadRunState) {
 	}
 }
 
+// settle puts the session back into the state a finished turn leaves it in:
+// still working while background tasks are in flight, because the CLI opens a
+// turn of its own the moment one of them reports back.
+func (s *session) settle() {
+	s.mu.Lock()
+	working := false
+	for _, task := range s.backgroundTasks {
+		working = working || !task.Ambient
+	}
+	s.mu.Unlock()
+	if working {
+		s.setState(protocol.StateBackground)
+		return
+	}
+	s.setState(protocol.StateIdle)
+}
+
 func (s *session) runState() protocol.ThreadRunState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,7 +108,14 @@ func (s *session) liveState() chat.LiveState {
 	for _, p := range s.pending {
 		requests = append(requests, p.request)
 	}
-	return chat.LiveState{Pending: requests, ContextUsage: s.contextUsage, LastTurn: s.lastTurn}
+	tasks := make([]protocol.BackgroundTask, len(s.backgroundTasks))
+	copy(tasks, s.backgroundTasks)
+	return chat.LiveState{
+		Pending:         requests,
+		ContextUsage:    s.contextUsage,
+		LastTurn:        s.lastTurn,
+		BackgroundTasks: tasks,
+	}
 }
 
 // idleSince reports how long the session has had no process work, and whether
@@ -121,6 +152,9 @@ func (s *session) ensureRunning(ctx context.Context, rec chat.ThreadRecord) erro
 
 func (s *session) startProcess(ctx context.Context, rec chat.ThreadRecord) error {
 	s.setState(protocol.StateStarting)
+	// The task set belongs to the process that reported it, and the new one
+	// starts carrying nothing.
+	s.setBackgroundTasks(nil)
 	proc, err := start(s.launcher(rec, rec.NativeID != ""), handlers{
 		onMessage:        s.onMessage,
 		onControlRequest: s.onControlRequest,
@@ -138,7 +172,11 @@ func (s *session) startProcess(ctx context.Context, rec chat.ThreadRecord) error
 
 	// initialize is what switches the CLI into the control protocol; until it
 	// answers, can_use_tool prompts would have nowhere to go.
-	if _, err := proc.control(ctx, map[string]any{"subtype": "initialize", "hooks": nil}, initializeTimeout); err != nil {
+	// perTaskStopAffordance says this client offers a stop control per
+	// background task, which is what keeps an interrupt to the running turn
+	// instead of killing every background agent with it.
+	request := map[string]any{"subtype": "initialize", "hooks": nil, "perTaskStopAffordance": true}
+	if _, err := proc.control(ctx, request, initializeTimeout); err != nil {
 		s.stopProcess()
 		return protocol.Errorf(protocol.CodeAgentUnavailable, "claude did not initialize: %v", err)
 	}
@@ -161,12 +199,14 @@ func (s *session) stopProcess() {
 // the next prompt starts a fresh process and resumes the transcript.
 func (s *session) onExit(err error) {
 	s.mu.Lock()
-	wasRunning := s.turn != ""
+	wasRunning := s.running
 	s.proc = nil
-	s.turn = ""
+	s.turn, s.running = "", false
 	s.mu.Unlock()
 
 	s.resolveAllPending()
+	// Whatever the process was carrying died with it.
+	s.setBackgroundTasks(nil)
 	if wasRunning {
 		message := "the claude process exited"
 		if err != nil {
@@ -177,13 +217,30 @@ func (s *session) onExit(err error) {
 	s.setState(protocol.StateIdle)
 }
 
+// setBackgroundTasks replaces the live set and tells the client, which is the
+// shape the CLI asks for: every background_tasks_changed carries the whole set
+// after the change, so a missed frame cannot strand a task on screen.
+func (s *session) setBackgroundTasks(tasks []protocol.BackgroundTask) {
+	if tasks == nil {
+		tasks = []protocol.BackgroundTask{}
+	}
+	s.mu.Lock()
+	unchanged := len(s.backgroundTasks) == 0 && len(tasks) == 0
+	s.backgroundTasks = tasks
+	s.mu.Unlock()
+	if unchanged {
+		return
+	}
+	s.publish(protocol.BackgroundTasks(s.threadID, tasks))
+}
+
 func (s *session) close() { s.stopProcess() }
 
 // --- commands ---
 
 func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protocol.ClientCommand) error {
 	s.mu.Lock()
-	if s.turn != "" {
+	if s.running {
 		s.mu.Unlock()
 		return protocol.Errorf(protocol.CodeThreadBusy, "a turn is already running")
 	}
@@ -195,7 +252,7 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 
 	blocks := promptBlocks(cmd)
 	s.mu.Lock()
-	s.turn = cmd.ClientMessageID
+	s.turn, s.running = cmd.ClientMessageID, true
 	s.interrupted = false
 	s.lastActive = time.Now()
 	proc := s.proc
@@ -212,7 +269,7 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	}
 	if err := proc.writeJSON(message); err != nil {
 		s.mu.Lock()
-		s.turn = ""
+		s.turn, s.running = "", false
 		s.mu.Unlock()
 		return protocol.Errorf(protocol.CodeAgentUnavailable, "%v", err)
 	}
@@ -257,7 +314,7 @@ func echoBlocks(cmd protocol.ClientCommand) []protocol.UserBlock {
 
 func (s *session) interrupt(ctx context.Context) error {
 	s.mu.Lock()
-	proc, running := s.proc, s.turn != ""
+	proc, running := s.proc, s.running
 	if running {
 		s.interrupted = true
 	}
@@ -267,6 +324,22 @@ func (s *session) interrupt(ctx context.Context) error {
 	}
 	if _, err := proc.control(ctx, map[string]any{"subtype": "interrupt"}, controlTimeout); err != nil {
 		return protocol.Errorf(protocol.CodeAgentUnavailable, "interrupt failed: %v", err)
+	}
+	return nil
+}
+
+// stopTask ends one background task. The CLI answers the control request only
+// once it has actually stopped the task and emitted the new set, so nothing
+// here has to guess at the outcome.
+func (s *session) stopTask(ctx context.Context, taskID string) error {
+	s.mu.Lock()
+	proc := s.proc
+	s.mu.Unlock()
+	if proc == nil {
+		return protocol.Errorf(protocol.CodeTaskNotFound, "no background task %s", taskID)
+	}
+	if _, err := proc.control(ctx, map[string]any{"subtype": "stop_task", "task_id": taskID}, controlTimeout); err != nil {
+		return protocol.Errorf(protocol.CodeTaskNotFound, "cannot stop task %s: %v", taskID, err)
 	}
 	return nil
 }
@@ -345,7 +418,7 @@ func (s *session) onControlRequest(requestID, subtype string, payload json.RawMe
 		decision, answered := <-p.answered
 		s.mu.Lock()
 		delete(s.pending, requestID)
-		stillRunning := s.turn != ""
+		stillRunning := s.running
 		s.mu.Unlock()
 
 		if !answered {
@@ -383,10 +456,13 @@ func (s *session) onMessage(kind string, raw json.RawMessage) {
 
 	switch kind {
 	case "stream_event":
+		s.openTurn()
 		s.onStreamEvent(raw)
 	case "assistant":
+		s.openTurn()
 		s.onAssistant(raw)
 	case "user":
+		s.openTurn()
 		s.onUser(raw)
 	case "result":
 		s.onResult(raw)
@@ -395,6 +471,22 @@ func (s *session) onMessage(kind string, raw json.RawMessage) {
 	case "rate_limit_event":
 		s.onRateLimit(raw)
 	}
+}
+
+// openTurn covers the turn nobody asked for: when a background task reports
+// back, the CLI feeds itself the notification and answers it, so turn content
+// arrives with no prompt behind it. The turn is bracketed like any other, with
+// an empty client_message_id saying it was not the owner's.
+func (s *session) openTurn() {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return
+	}
+	s.turn, s.running = "", true
+	s.mu.Unlock()
+	s.publish(protocol.TurnStarted(s.threadID, ""))
+	s.setState(protocol.StateRunning)
 }
 
 type streamEnvelope struct {
@@ -521,7 +613,7 @@ func (s *session) onResult(raw json.RawMessage) {
 
 	s.mu.Lock()
 	turn, interrupted := s.turn, s.interrupted
-	s.turn, s.interrupted = "", false
+	s.turn, s.running, s.interrupted = "", false, false
 	summary := turnSummary(result, interrupted)
 	s.lastTurn = &summary
 	// Every message of the turn is complete; nothing is left to append to.
@@ -532,7 +624,7 @@ func (s *session) onResult(raw json.RawMessage) {
 		s.publish(protocol.StreamError(s.threadID, code, message, false))
 	}
 	s.publish(protocol.TurnFinished(s.threadID, turn, summary))
-	s.setState(protocol.StateIdle)
+	s.settle()
 	s.deps.Registry.Touch(s.threadID)
 	go s.refreshContextUsage()
 }
@@ -577,6 +669,17 @@ type systemEnvelope struct {
 		Trigger   string `json:"trigger"`
 		PreTokens *int   `json:"pre_tokens"`
 	} `json:"compact_metadata"`
+	// background_tasks_changed carries the whole live set after the change.
+	Tasks []struct {
+		TaskID      string `json:"task_id"`
+		TaskType    string `json:"task_type"`
+		Description string `json:"description"`
+		Ambient     bool   `json:"ambient"`
+	} `json:"tasks"`
+	// task_notification
+	TaskID  string `json:"task_id"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
 }
 
 func (s *session) onSystem(raw json.RawMessage) {
@@ -622,7 +725,41 @@ func (s *session) onSystem(raw json.RawMessage) {
 		if env.Mode != "" {
 			s.deps.Registry.Update(s.threadID, func(rec *chat.ThreadRecord) { rec.Options.Set("permission-mode", modeAsFlag(env.Mode)) })
 		}
+	case "background_tasks_changed":
+		tasks := make([]protocol.BackgroundTask, 0, len(env.Tasks))
+		for _, task := range env.Tasks {
+			tasks = append(tasks, protocol.BackgroundTask{
+				TaskID:      task.TaskID,
+				TaskType:    task.TaskType,
+				Description: task.Description,
+				Ambient:     task.Ambient,
+			})
+		}
+		s.setBackgroundTasks(tasks)
+		// Between turns the set is what decides whether the thread is still
+		// working; during one the turn already says so.
+		s.mu.Lock()
+		running := s.running
+		s.mu.Unlock()
+		if !running {
+			s.settle()
+		}
+	case "task_notification":
+		s.publish(protocol.BackgroundTaskFinished(s.threadID, env.TaskID, taskStatus(env.Status), env.Summary))
 	}
+}
+
+// taskStatus maps the CLI's terminal status onto the protocol's. A status this
+// build has not seen reads as a failure, which is the honest reading of a task
+// that ended on something other than completion.
+func taskStatus(status string) protocol.TaskStatus {
+	switch status {
+	case "completed":
+		return protocol.TaskCompleted
+	case "stopped":
+		return protocol.TaskStopped
+	}
+	return protocol.TaskFailed
 }
 
 type rateLimitEnvelope struct {

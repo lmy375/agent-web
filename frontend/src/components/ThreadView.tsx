@@ -8,6 +8,7 @@ import { useWorkspace } from '@/store/workspace'
 import { Transcript } from './Transcript'
 import { Composer } from './Composer'
 import { InteractionPanel } from './dialogs/InteractionPanel'
+import { BackgroundTasks } from './BackgroundTasks'
 import { AgentMark } from './AgentMark'
 import { Button } from './ui/button'
 import { baseName, cn, homeRelative } from '@/lib/utils'
@@ -28,7 +29,10 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
   const summary = threads.find((t) => t.thread_id === id) ?? thread.summary
   const agent = summary ? descriptor(summary.agent_kind) : undefined
   // `prompting` covers the gap a cold harness opens: the prompt is on screen
-  // and sent, but no run state has come back to say a turn is under way.
+  // and sent, but no run state has come back to say a turn is under way. The
+  // `background` state is deliberately not busy: the harness carrying a task
+  // between turns is what the task panel says, and the composer stays open
+  // because the CLI takes a prompt while background work runs.
   const busy = summary?.run_state === 'running' || summary?.run_state === 'starting' || thread.prompting
 
   if (thread.error && !summary) {
@@ -76,7 +80,12 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
         items={thread.transcript.items}
         olderCursor={thread.olderCursor}
         onLoadOlder={() => void thread.loadOlder()}
-        footer={<InteractionPanel requests={thread.pending} onRespond={(request, decision) => void thread.respond(request, decision)} />}
+        footer={
+          <>
+            <BackgroundTasks tasks={thread.backgroundTasks} onStop={(taskID) => void thread.stopTask(taskID)} />
+            <InteractionPanel requests={thread.pending} onRespond={(request, decision) => void thread.respond(request, decision)} />
+          </>
+        }
       />
 
       {thread.error && (

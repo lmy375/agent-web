@@ -301,6 +301,14 @@ func (b *Backend) Respond(_ context.Context, threadID, requestID string, d proto
 	return s.respond(requestID, d)
 }
 
+func (b *Backend) StopTask(ctx context.Context, threadID, taskID string) error {
+	s, ok := b.session(threadID)
+	if !ok {
+		return protocol.Errorf(protocol.CodeTaskNotFound, "no background task %s", taskID)
+	}
+	return s.stopTask(ctx, taskID)
+}
+
 func (b *Backend) Discard(_ context.Context, rec chat.ThreadRecord) error {
 	b.mu.Lock()
 	s, ok := b.sessions[rec.ThreadID]

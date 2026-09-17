@@ -17,6 +17,7 @@ const (
 	CodeNoRunningTurn         ErrorCode = "no_running_turn"
 	CodeClientMessageConflict ErrorCode = "client_message_conflict"
 	CodeInteractionNotPending ErrorCode = "interaction_not_pending"
+	CodeTaskNotFound          ErrorCode = "task_not_found"
 	CodeDecisionMismatch      ErrorCode = "interaction_decision_mismatch"
 	CodeTooManyImages         ErrorCode = "too_many_images"
 	CodeImageTooLarge         ErrorCode = "image_too_large"
@@ -36,6 +37,7 @@ var httpStatus = map[ErrorCode]int{
 	CodeNoRunningTurn:         http.StatusConflict,
 	CodeClientMessageConflict: http.StatusConflict,
 	CodeInteractionNotPending: http.StatusConflict,
+	CodeTaskNotFound:          http.StatusNotFound,
 	CodeDecisionMismatch:      http.StatusUnprocessableEntity,
 	CodeTooManyImages:         http.StatusUnprocessableEntity,
 	CodeImageTooLarge:         http.StatusUnprocessableEntity,

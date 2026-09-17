@@ -61,6 +61,7 @@ func newThread() *thread {
 // working directory the owner picks.
 type Backend struct {
 	chat.NoSteer
+	chat.NoBackgroundTasks
 	opts Options
 	deps chat.Deps
 
@@ -80,8 +81,9 @@ func New(opts Options, deps chat.Deps) *Backend {
 		opts.Bin = "opencode"
 	}
 	return &Backend{
-		NoSteer: chat.NoSteer{AgentKind: protocol.KindOpenCode},
-		opts:    opts, deps: deps,
+		NoSteer:           chat.NoSteer{AgentKind: protocol.KindOpenCode},
+		NoBackgroundTasks: chat.NoBackgroundTasks{AgentKind: protocol.KindOpenCode},
+		opts:              opts, deps: deps,
 		threads: map[string]*thread{}, bySession: map[string]string{},
 	}
 }

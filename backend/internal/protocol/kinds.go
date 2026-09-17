@@ -23,6 +23,20 @@ const (
 	StateIdle         ThreadRunState = "idle"
 	StateRunning      ThreadRunState = "running"
 	StateWaitingInput ThreadRunState = "waiting_input"
+	// StateBackground is a thread with no turn under way whose harness is
+	// still carrying background work. Claude starts a turn of its own when a
+	// background task reports back, so this is not an idle conversation.
+	StateBackground ThreadRunState = "background"
+)
+
+// TaskStatus is how a background task ended.
+// Claude: task_notification.status.
+type TaskStatus string
+
+const (
+	TaskCompleted TaskStatus = "completed"
+	TaskFailed    TaskStatus = "failed"
+	TaskStopped   TaskStatus = "stopped"
 )
 
 // TurnStatus is how one turn ended.

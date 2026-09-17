@@ -1,4 +1,4 @@
-import { localeTag } from '@/i18n/core'
+import { localeTag, type Locale, type Params, type TranslationKey } from '@/i18n/core'
 import { useI18n } from '@/i18n'
 import { MessageSquare } from 'lucide-react'
 import { useEffect, useRef } from 'react'
@@ -80,6 +80,26 @@ function renderItems(items: Item[], active: boolean): React.ReactNode {
   })
 }
 
+/**
+ * A note's text: the harness wrote the summary of a finished background task,
+ * everything around it is ours to say.
+ */
+function noteLabel(
+  item: Extract<Item, { kind: 'note' }>,
+  t: (key: TranslationKey, params?: Params) => string,
+  locale: Locale,
+): string {
+  if (item.contextBoundary) {
+    if (!item.tokensBefore) return t('contextCompacted')
+    return t('contextCompactedCount', { count: item.tokensBefore.toLocaleString(localeTag[locale]) })
+  }
+  if (item.taskStatus) {
+    const headline = t(`backgroundTask.${item.taskStatus}`)
+    return item.label ? `${headline} · ${item.label}` : headline
+  }
+  return item.label
+}
+
 /** Quiet until the message is pointed at, so a long transcript stays prose. */
 function MessageActions({ text, className }: { text: string; className?: string }) {
   if (!text) return null
@@ -111,7 +131,7 @@ function ItemView({ item }: { item: Exclude<Item, { kind: 'assistant' }> }) {
       return (
         <div className="my-5 flex items-center gap-3 text-[0.6875rem] text-ink-faint">
           <span className="h-px flex-1 bg-rule" />
-          <span>{item.contextBoundary ? (item.tokensBefore ? t('contextCompactedCount', { count: item.tokensBefore.toLocaleString(localeTag[locale]) }) : t('contextCompacted')) : item.label}</span>
+          <span>{noteLabel(item, t, locale)}</span>
           <span className="h-px flex-1 bg-rule" />
         </div>
       )

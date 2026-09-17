@@ -23,6 +23,7 @@ type fakeBackend struct {
 	steers   []string
 	options  []protocol.ThreadOptions
 	answered []protocol.InteractionDecision
+	stopped  []string
 }
 
 func (f *fakeBackend) Kind() protocol.AgentKind                 { return f.kind }
@@ -64,6 +65,10 @@ func (f *fakeBackend) SetOptions(_ context.Context, rec chat.ThreadRecord) error
 }
 func (f *fakeBackend) Respond(_ context.Context, _, _ string, d protocol.InteractionDecision) error {
 	f.answered = append(f.answered, d)
+	return nil
+}
+func (f *fakeBackend) StopTask(_ context.Context, _, taskID string) error {
+	f.stopped = append(f.stopped, taskID)
 	return nil
 }
 func (f *fakeBackend) Discard(context.Context, chat.ThreadRecord) error { return nil }

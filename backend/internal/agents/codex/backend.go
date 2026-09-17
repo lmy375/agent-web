@@ -70,6 +70,7 @@ type approval struct {
 // on the first probe and kept: it is one process for the whole surface, not one
 // per conversation, so there is nothing per-thread to reap.
 type Backend struct {
+	chat.NoBackgroundTasks
 	opts Options
 	deps chat.Deps
 
@@ -89,7 +90,8 @@ func New(opts Options, deps chat.Deps) *Backend {
 		opts.Bin = "codex"
 	}
 	return &Backend{
-		opts: opts, deps: deps,
+		NoBackgroundTasks: chat.NoBackgroundTasks{AgentKind: protocol.KindCodex},
+		opts:              opts, deps: deps,
 		threads: map[string]*thread{}, byNative: map[string]string{},
 	}
 }

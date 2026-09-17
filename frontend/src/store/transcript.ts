@@ -5,7 +5,7 @@
  * announced it, so nothing renders differently after a reload.
  */
 import type {
-  ContentBlock, ImageBlock, ServerEvent, TextBlock, ToolKind, TranscriptEntry, UserBlock,
+  ContentBlock, ImageBlock, ServerEvent, TaskStatus, TextBlock, ToolKind, TranscriptEntry, UserBlock,
 } from './protocol'
 
 export interface ToolBlock {
@@ -32,7 +32,7 @@ export type Item =
   /** `clientMessageID` is set while this is our own prompt, not yet echoed back. */
   | { kind: 'user'; id: string; blocks: UserBlock[]; clientMessageID?: string }
   | { kind: 'assistant'; id: string; blocks: UiBlock[]; streaming: boolean }
-  | { kind: 'note'; id: string; label: string; contextBoundary?: boolean; tokensBefore?: number | null }
+  | { kind: 'note'; id: string; label: string; contextBoundary?: boolean; tokensBefore?: number | null; taskStatus?: TaskStatus }
   | { kind: 'alert'; id: string; code: string; message: string; fatal: boolean }
 
 export interface Transcript {
@@ -270,6 +270,13 @@ export function applyEvent(t: Transcript, event: ServerEvent): Transcript {
 
     case 'notice': {
       t.items.push({ kind: 'note', id: localID(), label: event.message })
+      return { ...t }
+    }
+
+    // A background task reporting back is also where the conversation picks
+    // itself up again, so the note says why a turn nobody prompted follows it.
+    case 'background_task_finished': {
+      t.items.push({ kind: 'note', id: localID(), label: event.summary, taskStatus: event.status })
       return { ...t }
     }
 

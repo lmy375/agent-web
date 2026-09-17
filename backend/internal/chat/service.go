@@ -211,11 +211,15 @@ func (s *Service) GetThread(threadID string) (protocol.ThreadDetail, error) {
 	if live.Pending == nil {
 		live.Pending = []protocol.InteractionRequest{}
 	}
+	if live.BackgroundTasks == nil {
+		live.BackgroundTasks = []protocol.BackgroundTask{}
+	}
 	return protocol.ThreadDetail{
-		Summary:      s.registry.Summary(rec),
-		Pending:      live.Pending,
-		ContextUsage: live.ContextUsage,
-		LastTurn:     live.LastTurn,
+		Summary:         s.registry.Summary(rec),
+		Pending:         live.Pending,
+		ContextUsage:    live.ContextUsage,
+		LastTurn:        live.LastTurn,
+		BackgroundTasks: live.BackgroundTasks,
 	}, nil
 }
 
@@ -340,6 +344,9 @@ func (s *Service) Handle(ctx context.Context, threadID string, cmd protocol.Clie
 				"%s does not take a %s", request.Payload.Kind(), cmd.Decision.Type)
 		}
 		return backend.Respond(ctx, threadID, cmd.RequestID, cmd.Decision)
+
+	case protocol.CmdStopTask:
+		return backend.StopTask(ctx, threadID, cmd.TaskID)
 	}
 	return protocol.Errorf(protocol.CodeBadRequest, "unknown command type %q", cmd.Type)
 }

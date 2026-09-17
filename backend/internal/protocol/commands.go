@@ -17,6 +17,7 @@ const (
 	CmdSteer               CommandType = "steer"                // Codex: turn/steer
 	CmdSetOptions          CommandType = "set_options"          // Claude: set_model / set_permission_mode | Codex: config/value/write
 	CmdInteractionResponse CommandType = "interaction_response" // resolves one pending request
+	CmdStopTask            CommandType = "stop_task"            // Claude: stop_task control request
 )
 
 // ulidPattern is Crockford base32; a prompt's client_message_id is the
@@ -40,6 +41,9 @@ type ClientCommand struct {
 	// interaction_response
 	RequestID string              `json:"request_id,omitempty"`
 	Decision  InteractionDecision `json:"decision,omitempty"`
+
+	// stop_task
+	TaskID string `json:"task_id,omitempty"`
 }
 
 func (c ClientCommand) Validate() error {
@@ -61,6 +65,10 @@ func (c ClientCommand) Validate() error {
 			return Errorf(CodeBadRequest, "an interaction response needs a request_id")
 		}
 		return c.Decision.Validate()
+	case CmdStopTask:
+		if c.TaskID == "" {
+			return Errorf(CodeBadRequest, "stopping a task needs a task_id")
+		}
 	default:
 		return Errorf(CodeBadRequest, "unknown command type %q", c.Type)
 	}
