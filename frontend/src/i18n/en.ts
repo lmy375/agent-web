@@ -46,7 +46,6 @@ export const en = {
   "imageReadFailed": "That image could not be read.",
   "removeImage": "Remove {name}",
   "remove": "remove",
-  "working": "Working",
   "message": "Message",
   "steerPlaceholder": "Steer the running turn…",
   "promptPlaceholder": "Ask {agent} to do something",

@@ -48,7 +48,6 @@ export const zh = {
   "imageReadFailed": "无法读取这张图片。",
   "removeImage": "移除 {name}",
   "remove": "移除",
-  "working": "正在处理",
   "message": "消息",
   "steerPlaceholder": "为当前任务补充指示…",
   "promptPlaceholder": "让 {agent} 帮你做些什么",

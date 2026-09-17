@@ -1,13 +1,13 @@
 import { effortLabel, LocalizedError, type DisplayError } from '@/i18n/core'
 import { useI18n } from '@/i18n'
-import { ArrowUp, CornerDownLeft, FolderOpen, Plus, Square } from 'lucide-react'
+import { ArrowUp, CornerDownLeft, Plus, Square } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentDescriptor, PermissionMode, ThreadSummary } from '@/store/protocol'
 import { api } from '@/lib/api'
 import { imageFiles, toAttachment, toBlock, attachmentSrc, type Attachment } from '@/lib/images'
 import { Button } from './ui/button'
 import { Picker } from './ui/field'
-import { baseName, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface ComposerProps {
   thread: ThreadSummary
@@ -154,11 +154,6 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
   return (
     <div className="shrink-0 bg-surface">
       <div className="conversation-width px-4 pb-3 pt-2 md:px-10 md:pb-4">
-        <div className="mb-2 flex items-center gap-2 rounded-xl bg-paper px-4 py-2.5 text-xs text-ink-faint">
-          <FolderOpen size={14} strokeWidth={1.5} />
-          <span className="min-w-0 flex-1 truncate" title={thread.cwd}>{baseName(thread.cwd)}</span>
-          <span className={cn('flex shrink-0 items-center gap-1.5', busy && 'text-running')}><span className={cn('h-1.5 w-1.5 rounded-full bg-current', busy && 'breathe')} />{busy ? t('working') : t('localWorkspace')}</span>
-        </div>
         {problem && (
           <div className="mb-2 flex items-center justify-between rounded-[4px] bg-failed/10 px-2 py-1 text-xs text-failed">
             {formatError(problem)}
