@@ -1,13 +1,12 @@
 import type { DisplayError } from '@/i18n/core'
 import { useI18n } from '@/i18n'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useThread } from '@/store/thread'
 import { useWorkspace } from '@/store/workspace'
 import { Transcript } from './Transcript'
 import { Composer } from './Composer'
-import { ContextMeter } from './ContextMeter'
 import { InteractionPanel } from './dialogs/InteractionPanel'
 import { AgentMark } from './AgentMark'
 import { Button } from './ui/button'
@@ -17,7 +16,7 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
   const { t, formatError } = useI18n()
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const { config, descriptor, rename, remove, threads } = useWorkspace()
+  const { config, descriptor, rename, threads } = useWorkspace()
   const thread = useThread()
   const open = useThread((s) => s.open)
   const [renaming, setRenaming] = useState(false)
@@ -67,20 +66,6 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
           {baseName(summary.cwd)}
         </span>
         <div className="flex-1" />
-        <ContextMeter usage={thread.contextUsage} lastTurn={thread.lastTurn} />
-        <Button
-          size="icon"
-          variant="quiet"
-          aria-label={t('deleteThread')}
-          title={t('deleteThread')}
-          onClick={async () => {
-            if (!confirm(t('confirmDelete'))) return
-            await remove(id)
-            navigate('/')
-          }}
-        >
-          <Trash2 size={16} strokeWidth={1.5} />
-        </Button>
       </header>
 
       <Transcript
@@ -110,6 +95,8 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
         onSteer={(text) => void thread.send({ type: 'steer', text })}
         onInterrupt={() => void thread.send({ type: 'interrupt' })}
         onOptions={(options) => void thread.send({ type: 'set_options', options })}
+        usage={thread.contextUsage}
+        lastTurn={thread.lastTurn}
       />
     </main>
   )

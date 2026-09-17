@@ -1,14 +1,14 @@
 import { relativeTime } from '@/i18n/core'
-import { LanguageSwitcher } from './LanguageSwitcher'
 import { useI18n } from '@/i18n'
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { NavLink } from 'react-router-dom'
-import { ChevronRight, Code2, FolderOpen, LogOut, PanelLeftClose, Plus } from 'lucide-react'
+import { NavLink, useMatch, useNavigate } from 'react-router-dom'
+import { ChevronRight, Code2, FolderOpen, PanelLeftClose, Plus, Settings2, Trash2 } from 'lucide-react'
 import { useWorkspace } from '@/store/workspace'
 import type { ThreadSummary } from '@/store/protocol'
 import { AgentMark } from './AgentMark'
 import { NewThread } from './NewThread'
+import { Settings } from './Settings'
 import { SidebarResizer } from './SidebarResizer'
 import { Button } from './ui/button'
 import { useSidebarWidth } from '@/lib/sidebarWidth'
@@ -16,10 +16,12 @@ import { baseName, cn, homeRelative } from '@/lib/utils'
 
 export function Sidebar({ className, onCollapse }: { className?: string; onCollapse: () => void }) {
   const { t } = useI18n()
-  const { threads, agents, config, nextCursor, loadMore, auth, signOut } = useWorkspace()
+  const { threads, agents, config, nextCursor, loadMore } = useWorkspace()
   const [creating, setCreating] = useState<{ cwd?: string } | null>(null)
+  const [settings, setSettings] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const { width, setWidth, commit } = useSidebarWidth()
+  const openThread = useMatch('/t/:id')?.params.id ?? null
   const waiting = useMemo(() => threads.filter((t) => t.run_state === 'waiting_input'), [threads])
   const projects = useMemo(() => {
     const groups = new Map<string, ThreadSummary[]>()
@@ -57,7 +59,7 @@ export function Sidebar({ className, onCollapse }: { className?: string; onColla
         {waiting.length > 0 && (
           <section className="mb-5 rounded-xl bg-waiting/[0.06] p-1">
             <div className="px-2 py-2 text-xs font-medium text-waiting">{t('waitingForYou', { count: waiting.length })}</div>
-            {waiting.map((thread) => <ThreadRow key={thread.thread_id} thread={thread} />)}
+            {waiting.map((thread) => <ThreadRow key={thread.thread_id} thread={thread} open={thread.thread_id === openThread} />)}
           </section>
         )}
         {projects.map(([cwd, group]) => (
@@ -69,7 +71,7 @@ export function Sidebar({ className, onCollapse }: { className?: string; onColla
               </button>
               <Button size="icon" variant="quiet" className="h-6 w-6" onClick={() => setCreating({ cwd })} aria-label={t('newInProject', { project: baseName(cwd) })} title={t('newInThisProject')}><Plus size={15} /></Button>
             </div>
-            {!collapsed.has(cwd) && group.map((thread) => <ThreadRow key={thread.thread_id} thread={thread} />)}
+            {!collapsed.has(cwd) && group.map((thread) => <ThreadRow key={thread.thread_id} thread={thread} open={thread.thread_id === openThread} />)}
           </section>
         ))}
         {!threads.length && (
@@ -82,31 +84,67 @@ export function Sidebar({ className, onCollapse }: { className?: string; onColla
         {nextCursor && <Button variant="quiet" size="sm" className="ml-6 mt-1" onClick={() => void loadMore()}>{t('showMore')}</Button>}
       </nav>
 
-      <div className="flex justify-end px-3 pb-2"><LanguageSwitcher /></div>
-      <footer className="flex shrink-0 items-center gap-3 border-t border-rule/70 px-5 py-4">
+      <button
+        onClick={() => setSettings(true)}
+        title={t('settings')}
+        className="flex shrink-0 items-center gap-3 border-t border-rule/70 px-5 py-4 text-left transition-colors hover:bg-sunken/60"
+      >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sunken"><Code2 size={16} strokeWidth={1.5} /></span>
         <div className="min-w-0 flex-1">
           <p className="text-[13px] text-ink-soft">{t('localWorkspace')}</p>
           <div className="mt-1 flex flex-wrap gap-1.5">
-            {agents.map((agent) => <span key={agent.kind} title={agent.runtime.unavailable_reason ?? t('agentReady', { agent: agent.label })} className={cn('text-[10px] text-ink-faint', agent.runtime.unavailable_reason && 'line-through opacity-50')}>{agent.label}</span>)}
+            {agents.map((agent) => <span key={agent.kind} className={cn('text-[10px] text-ink-faint', agent.runtime.unavailable_reason && 'line-through opacity-50')}>{agent.label}</span>)}
           </div>
         </div>
-        {auth?.password_required && <Button size="icon" variant="quiet" onClick={() => void signOut()} aria-label={t('signOut')} title={t('signOut')}><LogOut size={16} /></Button>}
-      </footer>
+        <Settings2 size={16} strokeWidth={1.5} className="shrink-0 text-ink-faint" aria-label={t('settings')} />
+      </button>
       <SidebarResizer className="hidden md:block" width={width} onResize={setWidth} onCommit={commit} />
       {creating && <NewThread initialCwd={creating.cwd} onClose={() => setCreating(null)} />}
+      {settings && <Settings onClose={() => setSettings(false)} />}
     </aside>
   )
 }
 
-function ThreadRow({ thread }: { thread: ThreadSummary }) {
+/** The row carries its own deletion: the thread it names is the only thing a
+ *  row is about, and the open thread's header should not have to hold a control
+ *  for it. Hover swaps the state dot for the button, so neither crowds the
+ *  title. */
+function ThreadRow({ thread, open }: { thread: ThreadSummary; open: boolean }) {
   const { t, locale } = useI18n()
+  const navigate = useNavigate()
+  const remove = useWorkspace((s) => s.remove)
   const running = thread.run_state === 'running' || thread.run_state === 'starting'
+
+  async function onDelete() {
+    if (!confirm(t('confirmDelete'))) return
+    await remove(thread.thread_id)
+    if (open) navigate('/')
+  }
+
   return (
-    <NavLink to={`/t/${encodeURIComponent(thread.thread_id)}`} title={`${thread.title ?? t('untitled')} · ${relativeTime(locale, Date.parse(thread.updated_at))}`} className={({ isActive }) => cn('group mb-0.5 flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-ink-soft transition-colors hover:bg-sunken/70 hover:text-ink', isActive && 'bg-sunken text-ink')}>
-      <AgentMark kind={thread.agent_kind} className="h-4 w-4" />
-      <span className="min-w-0 flex-1 truncate text-[13px]">{thread.title ?? t('untitled')}</span>
-      <span aria-label={t(`state.${thread.run_state}`)} className={cn('h-1.5 w-1.5 shrink-0 rounded-full border border-ink-faint/45', running && 'breathe border-running bg-running', thread.run_state === 'waiting_input' && 'border-waiting bg-waiting')} />
-    </NavLink>
+    <div className="group relative mb-0.5">
+      <NavLink to={`/t/${encodeURIComponent(thread.thread_id)}`} title={`${thread.title ?? t('untitled')} · ${relativeTime(locale, Date.parse(thread.updated_at))}`} className={({ isActive }) => cn('flex min-w-0 items-center gap-3 rounded-lg py-2 pl-3 pr-9 text-ink-soft transition-colors hover:bg-sunken/70 hover:text-ink', isActive && 'bg-sunken text-ink')}>
+        <AgentMark kind={thread.agent_kind} className="h-4 w-4" />
+        <span className="min-w-0 flex-1 truncate text-[13px]">{thread.title ?? t('untitled')}</span>
+      </NavLink>
+      <span
+        aria-label={t(`state.${thread.run_state}`)}
+        className={cn(
+          'pointer-events-none absolute right-3.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full border border-ink-faint/45 transition-opacity group-hover:opacity-0 group-has-[button:focus-visible]:opacity-0',
+          running && 'breathe border-running bg-running',
+          thread.run_state === 'waiting_input' && 'border-waiting bg-waiting',
+        )}
+      />
+      <Button
+        size="icon"
+        variant="quiet"
+        aria-label={t('deleteThread')}
+        title={t('deleteThread')}
+        onClick={() => void onDelete()}
+        className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 opacity-0 transition-opacity hover:bg-rule hover:text-failed group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <Trash2 size={14} strokeWidth={1.5} />
+      </Button>
+    </div>
   )
 }

@@ -41,7 +41,8 @@ works: the same transcript, the same permission card, the same composer.
   thread is created, changed any time after, and each rendered only when the
   chosen agent actually has that knob
 - Interrupt a running turn; steer one mid-flight where the harness supports it
-- Context-window meter and per-turn cost, where the harness reports them
+- A context ring in the composer, holding the window, the per-turn cost and
+  what fills it, where the harness reports them
 - Paste, drop or pick images into a message
 - Slash-command autocomplete and `@` file search, both from the server
 - Pick a working directory per thread: type a path, or browse the machine from
@@ -128,9 +129,9 @@ support Chinese and English and can be expanded with the keyboard.
 
 ## Interface language
 
-The frontend supports Simplified Chinese and English. Use the language selector
-at the bottom of the sidebar (also available on sign-in and connection-error
-screens). The first visit follows the browser's supported language preferences,
+The frontend supports Simplified Chinese and English. The selector lives in
+settings, opened from the sidebar footer (and stands on its own on the sign-in
+and connection-error screens, which have no sidebar). The first visit follows the browser's supported language preferences,
 falling back to English; an explicit choice is saved locally for future visits.
 Switching languages preserves the current conversation and unsent draft.
 
@@ -253,7 +254,7 @@ Three design decisions worth calling out:
   pretending: Codex has no plan mode and Claude Code cannot steer a running
   turn, so neither control is drawn for them. OpenCode has no reasoning-effort
   knob, and reports a token count without a window size, so it gets a count
-  instead of a meter.
+  instead of a ring.
 - One turn runs per thread at a time. A prompt sent while a turn is running is
   refused with `thread_busy`; press Stop first, or steer if the agent supports it.
 - A prompt carries a ULID. Re-sending the same one is a no-op, and the same id

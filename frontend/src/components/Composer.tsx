@@ -2,9 +2,10 @@ import { effortLabel, LocalizedError, type DisplayError } from '@/i18n/core'
 import { useI18n } from '@/i18n'
 import { ArrowUp, CornerDownLeft, Plus, Square } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentDescriptor, PermissionMode, ThreadSummary } from '@/store/protocol'
+import type { AgentDescriptor, ContextUsage, PermissionMode, ThreadSummary, TurnSummary } from '@/store/protocol'
 import { api } from '@/lib/api'
 import { imageFiles, toAttachment, toBlock, attachmentSrc, type Attachment } from '@/lib/images'
+import { ContextMeter } from './ContextMeter'
 import { Button } from './ui/button'
 import { Picker } from './ui/field'
 import { cn } from '@/lib/utils'
@@ -17,12 +18,14 @@ interface ComposerProps {
   onSteer: (text: string) => void
   onInterrupt: () => void
   onOptions: (options: { model?: string; mode?: PermissionMode; effort?: string }) => void
+  usage: ContextUsage | null
+  lastTurn: TurnSummary | null
 }
 
 /** What `/` and `@` are completing right now. */
 type Menu = { kind: 'slash' | 'file'; query: string; from: number } | null
 
-export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterrupt, onOptions }: ComposerProps) {
+export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterrupt, onOptions, usage, lastTurn }: ComposerProps) {
   const { t, locale, formatError } = useI18n()
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -247,6 +250,7 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
             </>
           )}
           <span className="ml-1 hidden items-center gap-1 text-[11px] text-ink-faint xl:flex"><CornerDownLeft size={12} />{t('enterToSend')}</span>
+          <ContextMeter usage={usage} lastTurn={lastTurn} className="ml-1" />
           <div className="flex-1" />
           {modelOptions.length > 0 && <Picker title={t('model')} value={thread.options.model ?? ''} options={modelOptions} onChange={(model) => onOptions({ model })} />}
           {effortOptions.length > 0 && <Picker title={t('effort')} value={thread.options.effort ?? ''} options={effortOptions} onChange={(effort) => onOptions({ effort })} />}
