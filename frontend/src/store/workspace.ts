@@ -35,6 +35,16 @@ function sorted(threads: ThreadSummary[]): ThreadSummary[] {
   return [...threads].sort((a, b) => (a.updated_at === b.updated_at ? b.thread_id.localeCompare(a.thread_id) : b.updated_at.localeCompare(a.updated_at)))
 }
 
+/** The directory has three sources -- a page, a command's reply, and the live
+ *  stream -- and they race: a new thread is published before its own POST has
+ *  returned. All three fold in through here, keyed by thread id, so a row can
+ *  only ever exist once however it arrived. */
+function merge(existing: ThreadSummary[], incoming: ThreadSummary[]): ThreadSummary[] {
+  const rows = new Map(existing.map((t) => [t.thread_id, t]))
+  for (const row of incoming) rows.set(row.thread_id, row)
+  return sorted([...rows.values()])
+}
+
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   auth: null,
   unreachable: null,
@@ -81,7 +91,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set({ loadingMore: true })
     try {
       const list = await api.threads(nextCursor)
-      set({ threads: sorted([...threads, ...list.threads]), nextCursor: list.next_cursor })
+      set({ threads: merge(threads, list.threads), nextCursor: list.next_cursor })
     } finally {
       set({ loadingMore: false })
     }
@@ -93,8 +103,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     return subscribe(null, {
       onEvent(event: ServerEvent) {
         if (event.type === 'thread_updated') {
-          const rest = get().threads.filter((t) => t.thread_id !== event.summary.thread_id)
-          set({ threads: sorted([...rest, event.summary]) })
+          set({ threads: merge(get().threads, [event.summary]) })
         } else if (event.type === 'thread_deleted') {
           set({ threads: get().threads.filter((t) => t.thread_id !== event.thread_id) })
         }
@@ -105,13 +114,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   async create(kind, cwd, options) {
     const summary = await api.createThread({ agent_kind: kind, cwd, options })
-    set({ threads: sorted([summary, ...get().threads]) })
+    set({ threads: merge(get().threads, [summary]) })
     return summary
   },
 
   async rename(id, title) {
     const summary = await api.rename(id, title)
-    set({ threads: sorted(get().threads.map((t) => (t.thread_id === id ? summary : t))) })
+    set({ threads: merge(get().threads, [summary]) })
   },
 
   async remove(id) {
