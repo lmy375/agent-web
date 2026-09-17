@@ -27,7 +27,9 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
   // arrives while this thread's own stream is reconnecting.
   const summary = threads.find((t) => t.thread_id === id) ?? thread.summary
   const agent = summary ? descriptor(summary.agent_kind) : undefined
-  const busy = summary?.run_state === 'running' || summary?.run_state === 'starting'
+  // `prompting` covers the gap a cold harness opens: the prompt is on screen
+  // and sent, but no run state has come back to say a turn is under way.
+  const busy = summary?.run_state === 'running' || summary?.run_state === 'starting' || thread.prompting
 
   if (thread.error && !summary) {
     return <Missing message={thread.error} onBack={() => navigate('/')} />
@@ -91,7 +93,7 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
         thread={summary}
         descriptor={agent}
         busy={busy}
-        onPrompt={(text, images) => void thread.prompt(text, images)}
+        onPrompt={(text, images) => thread.prompt(text, images)}
         onSteer={(text) => void thread.send({ type: 'steer', text })}
         onInterrupt={() => void thread.send({ type: 'interrupt' })}
         onOptions={(options) => void thread.send({ type: 'set_options', options })}

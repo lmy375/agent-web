@@ -51,9 +51,25 @@ export function latestThought(entries: ActivityEntry[]): string {
     const entry = entries[i]
     if (entry.kind !== 'thinking') continue
     const line = entry.text.split('\n').map((part) => part.trim()).filter(Boolean).at(-1)
-    if (line) return line
+    if (line) return plainText(line)
   }
   return ''
+}
+
+/**
+ * Reasoning is markdown, and a one-line preview has no room for its syntax.
+ * Emphasis with a single `*` or `_` is left alone: identifiers carry more
+ * underscores than a thought carries italics.
+ */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+])\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__)([\s\S]+?)\1/g, '$2')
+    .replace(/`+([^`]+)`+/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function activityStats(entries: ActivityEntry[], active = false) {

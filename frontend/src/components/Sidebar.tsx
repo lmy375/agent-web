@@ -127,14 +127,20 @@ function ThreadRow({ thread, open }: { thread: ThreadSummary; open: boolean }) {
         <AgentMark kind={thread.agent_kind} className="h-4 w-4" />
         <span className="min-w-0 flex-1 truncate text-[13px]">{thread.title ?? t('untitled')}</span>
       </NavLink>
+      {/* The fade sits on a wrapper because `breathe` animates the dot's own
+          opacity, and an animation outranks whatever hover sets on it. */}
       <span
         aria-label={t(`state.${thread.run_state}`)}
-        className={cn(
-          'pointer-events-none absolute right-3.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full border border-ink-faint/45 transition-opacity group-hover:opacity-0 group-has-[button:focus-visible]:opacity-0',
-          running && 'breathe border-running bg-running',
-          thread.run_state === 'waiting_input' && 'border-waiting bg-waiting',
-        )}
-      />
+        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 transition-opacity group-hover:opacity-0 group-has-[button:focus-visible]:opacity-0"
+      >
+        <span
+          className={cn(
+            'block h-1.5 w-1.5 rounded-full border border-ink-faint/45',
+            running && 'breathe border-running bg-running',
+            thread.run_state === 'waiting_input' && 'border-waiting bg-waiting',
+          )}
+        />
+      </span>
       <Button
         size="icon"
         variant="quiet"

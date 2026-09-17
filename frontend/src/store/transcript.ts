@@ -29,7 +29,8 @@ export type UiBlock =
   | ToolBlock
 
 export type Item =
-  | { kind: 'user'; id: string; blocks: UserBlock[] }
+  /** `clientMessageID` is set while this is our own prompt, not yet echoed back. */
+  | { kind: 'user'; id: string; blocks: UserBlock[]; clientMessageID?: string }
   | { kind: 'assistant'; id: string; blocks: UiBlock[]; streaming: boolean }
   | { kind: 'note'; id: string; label: string; contextBoundary?: boolean; tokensBefore?: number | null }
   | { kind: 'alert'; id: string; code: string; message: string; fatal: boolean }
@@ -146,9 +147,53 @@ function userBlocks(blocks: UserBlock[]): UserBlock[] {
   return out
 }
 
+/**
+ * The item this client put on screen itself, still waiting to be echoed back.
+ * Only owner prompts are ever local, so the top level is the only place to look.
+ */
+function localEcho(items: Item[], clientMessageID: string) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]
+    if (item.kind === 'user' && item.clientMessageID === clientMessageID) return item
+  }
+  return null
+}
+
+/**
+ * Show an owner prompt at once, before the command has even left the browser.
+ * A cold harness takes seconds to start and cannot echo the prompt until it
+ * has, so waiting for the echo leaves the composer cleared and the screen
+ * unchanged. The id is the one claude_code and opencode will echo, so `seen`
+ * settles those two on its own; codex renames it and is claimed by
+ * `client_message_id` instead.
+ */
+export function localPrompt(t: Transcript, clientMessageID: string, blocks: UserBlock[]): Transcript {
+  const id = `prompt-${clientMessageID}`
+  t.seen.add(id)
+  return { ...t, items: [...t.items, { kind: 'user', id, blocks, clientMessageID }] }
+}
+
+/** Take one back off: the command never reached the harness. */
+export function dropLocalPrompt(t: Transcript, clientMessageID: string): Transcript {
+  const item = localEcho(t.items, clientMessageID)
+  if (!item) return t
+  t.seen.delete(item.id)
+  return { ...t, items: t.items.filter((i) => i !== item) }
+}
+
 export function applyEvent(t: Transcript, event: ServerEvent): Transcript {
   switch (event.type) {
     case 'user_message': {
+      const local = event.client_message_id ? localEcho(t.items, event.client_message_id) : null
+      if (local) {
+        local.clientMessageID = undefined
+        const settled = userBlocks(event.blocks)
+        // The local id stays: the item is already mounted under it, and `seen`
+        // is what keeps replayed history from doubling it.
+        if (settled.length) local.blocks = settled
+        t.seen.add(event.message_id)
+        return { ...t }
+      }
       if (t.seen.has(event.message_id)) return t
       t.seen.add(event.message_id)
       const list = listFor(t, event.parent_tool_use_id)

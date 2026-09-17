@@ -14,7 +14,8 @@ interface ComposerProps {
   thread: ThreadSummary
   descriptor: AgentDescriptor | undefined
   busy: boolean
-  onPrompt: (text: string, images: ReturnType<typeof toBlock>[]) => void
+  /** Resolves false when the prompt never reached the harness. */
+  onPrompt: (text: string, images: ReturnType<typeof toBlock>[]) => Promise<boolean>
   onSteer: (text: string) => void
   onInterrupt: () => void
   onOptions: (options: { model?: string; mode?: PermissionMode; effort?: string }) => void
@@ -111,19 +112,21 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
     }
   }
 
-  function submit() {
+  async function submit() {
     if (busy && !canSteer) return
     const body = text.trim()
     if (!body && !attachments.length) return
     if (canSteer && attachments.length) return setProblem(new LocalizedError('imageWait'))
-    if (canSteer && body) {
-      onSteer(body)
-    } else {
-      onPrompt(body, attachments.map(toBlock))
-    }
+    const sent = attachments
     setText('')
     setAttachments([])
     setMenu(null)
+    if (canSteer && body) return onSteer(body)
+    if (await onPrompt(body, sent.map(toBlock))) return
+    // The prompt never left, so hand the typing back rather than make the
+    // owner write it again -- unless they have already started something new.
+    setText((current) => current || body)
+    setAttachments((current) => (current.length ? current : sent))
   }
 
   const suggestions = menu?.kind === 'slash' ? commands.map((c) => ({ value: c.name, hint: c.description })) : files.map((p) => ({ value: p, hint: '' }))
@@ -146,7 +149,7 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
     }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      submit()
+      void submit()
     }
   }
 
@@ -236,7 +239,7 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
             {busy && !canSteer && capabilities?.supports_interrupt !== false ? (
               <Button size="icon" onClick={onInterrupt} aria-label={t('stopResponse')} title={t('stopResponse')} className="rounded-full"><Square size={13} fill="currentColor" /></Button>
             ) : (
-              <Button size="icon" variant="solid" className="rounded-full" disabled={(!text.trim() && !attachments.length) || (busy && !canSteer)} onClick={submit} aria-label={canSteer ? t('steer') : t('sendMessage')} title={canSteer ? t('steer') : t('sendMessage')}><ArrowUp size={18} /></Button>
+              <Button size="icon" variant="solid" className="rounded-full" disabled={(!text.trim() && !attachments.length) || (busy && !canSteer)} onClick={() => void submit()} aria-label={canSteer ? t('steer') : t('sendMessage')} title={canSteer ? t('steer') : t('sendMessage')}><ArrowUp size={18} /></Button>
             )}
           </div>
         </div>

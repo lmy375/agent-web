@@ -4,9 +4,9 @@ import { create } from 'zustand'
 import { api, subscribe } from '@/lib/api'
 import type {
   ClientCommand, ContextUsage, ImageBlock, InteractionDecision, InteractionRequest,
-  ServerEvent, ThreadSummary, TurnSummary,
+  ServerEvent, ThreadSummary, TurnSummary, UserBlock,
 } from './protocol'
-import { applyEvent, emptyTranscript, prependHistory, type Transcript } from './transcript'
+import { applyEvent, dropLocalPrompt, emptyTranscript, localPrompt, prependHistory, type Transcript } from './transcript'
 
 interface ThreadState {
   id: string | null
@@ -18,14 +18,18 @@ interface ThreadState {
   /** Older history exists; the transcript header offers to load it. */
   olderCursor: string | null
   loading: boolean
-  /** Set while a command is in flight, so the composer cannot double-send. */
-  sending: boolean
+  /**
+   * A prompt is on screen but the harness has not reported a turn yet, so the
+   * composer is already busy and cannot double-send.
+   */
+  prompting: boolean
   error: DisplayError | null
 
   open: (id: string) => () => void
-  send: (command: ClientCommand) => Promise<void>
-  prompt: (text: string, images: ImageBlock[]) => Promise<void>
-  respond: (requestID: string, decision: InteractionDecision) => Promise<void>
+  /** False when the command failed; the caller decides what to undo. */
+  send: (command: ClientCommand) => Promise<boolean>
+  prompt: (text: string, images: ImageBlock[]) => Promise<boolean>
+  respond: (requestID: string, decision: InteractionDecision) => Promise<boolean>
   loadOlder: () => Promise<void>
   clearError: () => void
 }
@@ -52,7 +56,7 @@ export const useThread = create<ThreadState>((set, get) => ({
   lastTurn: null,
   olderCursor: null,
   loading: true,
-  sending: false,
+  prompting: false,
   error: null,
 
   /**
@@ -63,7 +67,7 @@ export const useThread = create<ThreadState>((set, get) => ({
   open(id) {
     set({
       id, summary: null, transcript: emptyTranscript(), pending: [], contextUsage: null,
-      lastTurn: null, olderCursor: null, loading: true, error: null,
+      lastTurn: null, olderCursor: null, loading: true, prompting: false, error: null,
     })
 
     const unsubscribe = subscribe(id, {
@@ -122,19 +126,33 @@ export const useThread = create<ThreadState>((set, get) => ({
 
   async send(command) {
     const id = get().id
-    if (!id) return
-    set({ sending: true, error: null })
+    if (!id) return false
+    set({ error: null })
     try {
       await api.send(id, command)
+      return true
     } catch (error) {
       set({ error: error instanceof Error ? error : new LocalizedError('error.command') })
-    } finally {
-      set({ sending: false })
+      return false
     }
   },
 
-  prompt(text, images) {
-    return get().send({ type: 'prompt', client_message_id: ulid(), text, images })
+  /**
+   * The prompt goes on screen before it is sent. Starting a cold harness takes
+   * seconds, and until it is up nothing can echo the prompt back, so waiting
+   * for the echo would leave the owner looking at an empty composer.
+   */
+  async prompt(text, images) {
+    const id = get().id
+    if (!id) return false
+    const clientMessageID = ulid()
+    const blocks: UserBlock[] = [...images, ...(text ? [{ type: 'text' as const, text }] : [])]
+    set({ transcript: localPrompt(get().transcript, clientMessageID, blocks), prompting: true })
+    const ok = await get().send({ type: 'prompt', client_message_id: clientMessageID, text, images })
+    if (get().id !== id) return ok
+    set({ prompting: false })
+    if (!ok) set({ transcript: dropLocalPrompt(get().transcript, clientMessageID) })
+    return ok
   },
 
   respond(requestID, decision) {
