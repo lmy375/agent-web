@@ -36,6 +36,10 @@ type session struct {
 	// Per-message stream assembly: which content block index is what.
 	messageID  string
 	blockTools map[int]string
+	// assembled is one message's content blocks as the CLI reveals them: it
+	// writes an `assistant` line per block, and assistant_message carries the
+	// whole array, so a block's position in it is the index its deltas used.
+	assembled map[string][]protocol.ContentBlock
 }
 
 func newSession(threadID string, deps chat.Deps, launcher func(chat.ThreadRecord, bool) launch) *session {
@@ -46,6 +50,7 @@ func newSession(threadID string, deps chat.Deps, launcher func(chat.ThreadRecord
 		state:      protocol.StateIdle,
 		pending:    map[string]*pending{},
 		blockTools: map[int]string{},
+		assembled:  map[string][]protocol.ContentBlock{},
 		lastActive: time.Now(),
 	}
 }
@@ -470,7 +475,13 @@ func (s *session) onAssistant(raw json.RawMessage) {
 			s.publish(protocol.ToolUseEnd(s.threadID, block.ID, input))
 		}
 	}
-	s.publish(protocol.AssistantMessage(s.threadID, env.Message.ID, contentBlocks(blocks), env.ParentToolUseID))
+	s.mu.Lock()
+	settled := s.assembled[env.Message.ID]
+	whole := make([]protocol.ContentBlock, 0, len(settled)+len(blocks))
+	whole = append(append(whole, settled...), contentBlocks(blocks)...)
+	s.assembled[env.Message.ID] = whole
+	s.mu.Unlock()
+	s.publish(protocol.AssistantMessage(s.threadID, env.Message.ID, whole, env.ParentToolUseID))
 }
 
 type userEnvelope struct {
@@ -509,6 +520,8 @@ func (s *session) onResult(raw json.RawMessage) {
 	s.turn, s.interrupted = "", false
 	summary := turnSummary(result, interrupted)
 	s.lastTurn = &summary
+	// Every message of the turn is complete; nothing is left to append to.
+	s.assembled = map[string][]protocol.ContentBlock{}
 	s.mu.Unlock()
 
 	if code, message, failed := resultError(result); failed && !interrupted {

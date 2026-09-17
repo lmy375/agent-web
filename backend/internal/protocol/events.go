@@ -119,8 +119,11 @@ type UserMessageEvent struct {
 func (UserMessageEvent) transcriptEntry() {}
 
 // AssistantMessageEvent settles one assistant message. Deltas stream first;
-// this event carries the final blocks and the client replaces its assembly.
-// Granularity is the backend's; the client appends by message_id.
+// this event carries the message's whole content array, so a block's position
+// in it is the block_index the deltas used and the client can replace its
+// assembly one position at a time. A harness that reveals a message block by
+// block -- the claude CLI writes a line per block -- sends the array again,
+// grown, rather than sending the new block on its own.
 type AssistantMessageEvent struct {
 	EventBase
 	MessageID       string         `json:"message_id"`

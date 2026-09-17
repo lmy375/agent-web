@@ -75,6 +75,12 @@ func readTranscript(threadID, cwd, sessionID string, before string, limit int) (
 	}
 	entries := []keyed{}
 
+	// The CLI writes one `assistant` line per content block, all under the same
+	// message id, with the `user` lines carrying tool results in between; an
+	// assistant_message carries the whole content array, so a later line grows
+	// the entry the first one opened rather than starting its own.
+	assistantAt := map[string]int{}
+
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64<<10), maxLineBytes)
 	for scanner.Scan() {
@@ -82,6 +88,19 @@ func readTranscript(threadID, cwd, sessionID string, before string, limit int) (
 		if json.Unmarshal(scanner.Bytes(), &line) != nil || line.IsSidechain {
 			// A sidechain is a subagent's own conversation; it is shown live
 			// under its Task tool call and has no standalone place in history.
+			continue
+		}
+		if line.Type == "assistant" {
+			blocks := contentBlocks(line.Message.blocks())
+			if at, opened := assistantAt[line.Message.ID]; opened && line.Message.ID != "" {
+				grown := entries[at].entry.(protocol.AssistantMessageEvent)
+				grown.Blocks = append(grown.Blocks, blocks...)
+				entries[at].entry = grown
+				continue
+			}
+			assistantAt[line.Message.ID] = len(entries)
+			message := protocol.AssistantMessage(threadID, line.Message.ID, blocks, nil).At(line.Timestamp)
+			entries = append(entries, keyed{line.UUID, message})
 			continue
 		}
 		for _, entry := range transcriptEntries(threadID, line) {
@@ -117,11 +136,6 @@ func readTranscript(threadID, cwd, sessionID string, before string, limit int) (
 
 func transcriptEntries(threadID string, line transcriptLine) []protocol.TranscriptEntry {
 	switch line.Type {
-	case "assistant":
-		blocks := line.Message.blocks()
-		return []protocol.TranscriptEntry{
-			protocol.AssistantMessage(threadID, line.Message.ID, contentBlocks(blocks), nil).At(line.Timestamp),
-		}
 	case "user":
 		blocks := line.Message.blocks()
 		if len(blocks) == 1 && blocks[0].Type == "text" {

@@ -104,33 +104,32 @@ function toUiBlock(block: ContentBlock): UiBlock | null {
 }
 
 /**
- * Settle an assistant message: what the final message carries replaces what was
- * streamed, and what it does not mention is kept rather than deleted. A harness
- * can stream reasoning and then omit it from the settled message, and a tool
- * call already has a result attached that the message never had.
+ * Settle an assistant message. The event carries the message's whole content
+ * array, so a block's position in it is the index the deltas streamed under:
+ * each settled block replaces what was streamed at its own position, and a
+ * block beyond the array is kept rather than deleted. A tool call keeps the
+ * result already attached to it, which the message never had.
  */
 function settle(item: Extract<Item, { kind: 'assistant' }>, blocks: ContentBlock[]) {
-  const settled: UiBlock[] = []
-  for (const raw of blocks) {
+  blocks.forEach((raw, index) => {
     const next = toUiBlock(raw)
-    if (!next) continue
+    if (!next) {
+      // An encrypted reasoning block arrives empty, and the summary streamed
+      // under the same index is all there is to show of it.
+      if (!item.blocks[index]) item.blocks[index] = { type: 'text', text: '', final: true }
+      return
+    }
     if (next.type === 'tool') {
       const existing = findTool([item], next.id)
       if (existing) {
         existing.input = next.input
         existing.partialJson = undefined
-        settled.push(existing)
-        continue
+        item.blocks[index] = existing
+        return
       }
     }
-    settled.push(next)
-  }
-  const keptThinking = settled.some((b) => b.type === 'thinking')
-    ? []
-    : item.blocks.filter((b) => b.type === 'thinking' && b.text.trim())
-  const keptTools = item.blocks.filter((b) => b.type === 'tool' && !settled.includes(b))
-  // Reasoning came before the answer, and a tool the message forgot came after.
-  item.blocks = [...keptThinking, ...settled, ...keptTools]
+    item.blocks[index] = next
+  })
   item.streaming = false
 }
 
