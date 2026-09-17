@@ -200,10 +200,11 @@ is exactly where a permission prompt would be.
   Closed enums with a comment on each member naming the native value it maps to;
   18 server events; 5 client commands; 3 interaction kinds.
 - [backend/internal/chat](backend/internal/chat) — `Service` dispatches by kind
-  and is the single place kind-neutral policy lives. `Registry` is the JSON file
-  of threads this UI created, so the directory never lists a session someone
-  started in a terminal. `Hub` fans events out to per-thread and directory
-  subscribers.
+  and is the single place kind-neutral policy lives. `Registry` is the SQLite
+  database of threads this UI created, so the directory never lists a session
+  someone started in a terminal; `ThreadRecord` is both the row and the mapped
+  model, and the schema is migrated on every start. `Hub` fans events out to
+  per-thread and directory subscribers.
 - [backend/internal/agents/claudecode](backend/internal/agents/claudecode) —
   `claude --print --input-format stream-json` plus the control channel
   multiplexed onto the same pipes (`initialize`, `interrupt`, `set_model`,

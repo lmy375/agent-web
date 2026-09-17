@@ -37,7 +37,13 @@ func main() {
 		log.Fatalf("refusing to bind %s with no AGENT_WEB_PASSWORD set; use a loopback host or AGENT_WEB_ALLOW_NO_AUTH=true", cfg.Host)
 	}
 
-	registry := chat.NewRegistry(filepath.Join(cfg.DataDir, "threads.json"))
+	registry, err := chat.NewRegistry(filepath.Join(cfg.DataDir, "threads.db"))
+	if err != nil {
+		log.Fatalf("cannot open thread database: %v", err)
+	}
+	// Declared before the service's own defer so it closes last: stopping a
+	// backend still touches the directory.
+	defer func() { _ = registry.Close() }()
 	hub := chat.NewHub()
 	deps := chat.Deps{Publish: hub.Publish, Registry: registry}
 	svc := chat.NewService(registry, hub, buildBackends(cfg, deps)...)

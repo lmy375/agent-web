@@ -50,15 +50,25 @@ cd backend && AGENT_WEB_E2E=1 go test ./internal/server/ -run TestClaudeCodeTurn
 
 ## Go
 
-- Standard library only. No router, no JSON codegen, no DI framework. If a
-  dependency looks necessary, say why before adding it.
+- Standard library only, with one exception: the thread registry is GORM over
+  `github.com/glebarez/sqlite`. The driver is the pure-Go one deliberately, so
+  `go build` still needs no C toolchain and `CGO_ENABLED=0` still
+  cross-compiles — never swap in `gorm.io/driver/sqlite`, which is cgo. No
+  router, no JSON codegen, no DI framework. If another dependency looks
+  necessary, say why before adding it.
+- The registry's schema is `ThreadRecord`'s tags and nothing else. It is
+  migrated on every start, so a schema change is an edit to that struct — but
+  `AutoMigrate` only ever adds, so a new column has to be nullable or carry a
+  default, and a rename is a new column plus a backfill.
 - Comments say **why**, and only where the reason is not on the line above.
   Never narrate what the code does.
 - Errors the client sees are `*protocol.Error` with a code from the closed list;
   anything else reaching a handler is a bug and becomes a 500.
 - A mutex protects state, not calls. Never hold a lock across a call that can
-  re-enter the same structure — the registry composes summaries outside its own
-  lock for exactly that reason.
+  re-enter the same structure. The registry is the standing example: it composes
+  summaries with no statement or transaction still open, because a backend asked
+  for a run state may read it back, and its database runs on one connection —
+  so the same mistake hangs rather than races.
 - Tests are for business rules, not for lines of code. `internal/chat` tests the
   policy every adapter depends on; adapters are proven against the real
   harnesses by the opt-in e2e test rather than by mocks of their wire protocol.

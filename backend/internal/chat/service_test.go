@@ -67,7 +67,11 @@ func (f *fakeBackend) Close()                                           {}
 
 func newService(t *testing.T, backends ...chat.Backend) *chat.Service {
 	t.Helper()
-	registry := chat.NewRegistry(filepath.Join(t.TempDir(), "threads.json"))
+	registry, err := chat.NewRegistry(filepath.Join(t.TempDir(), "threads.db"))
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
+	}
+	t.Cleanup(func() { _ = registry.Close() })
 	return chat.NewService(registry, chat.NewHub(), backends...)
 }
 

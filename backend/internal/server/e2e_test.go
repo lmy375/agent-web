@@ -196,7 +196,11 @@ type harness struct{ server *httptest.Server }
 func newHarness(t *testing.T, work string) *harness {
 	t.Helper()
 	cfg := config.Config{RootDir: work, DataDir: filepath.Join(work, "state"), IdleTimeoutS: 900}
-	registry := chat.NewRegistry(filepath.Join(cfg.DataDir, "threads.json"))
+	registry, err := chat.NewRegistry(filepath.Join(cfg.DataDir, "threads.db"))
+	if err != nil {
+		t.Fatalf("open registry: %v", err)
+	}
+	t.Cleanup(func() { _ = registry.Close() })
 	hub := chat.NewHub()
 	deps := chat.Deps{Publish: hub.Publish, Registry: registry}
 	svc := chat.NewService(registry, hub, claudecode.New(claudecode.Options{
