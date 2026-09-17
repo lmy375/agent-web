@@ -62,8 +62,3 @@ export function relativeTime(locale: Locale, ms?: number | null, now = Date.now(
   if (Math.abs(days) < 7) return formatter.format(days, 'day')
   return new Date(ms).toLocaleDateString(localeTag[locale])
 }
-
-export function effortLabel(locale: Locale, id: string, fallback: string): string {
-  const key = `effort.${id}`
-  return Object.hasOwn(en, key) ? translate(locale, key as TranslationKey) : fallback
-}

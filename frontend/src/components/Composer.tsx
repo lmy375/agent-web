@@ -1,8 +1,8 @@
-import { effortLabel, LocalizedError, type DisplayError } from '@/i18n/core'
+import { LocalizedError, type DisplayError } from '@/i18n/core'
 import { useI18n } from '@/i18n'
 import { ArrowUp, CornerDownLeft, Plus, Square } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentDescriptor, ContextUsage, PermissionMode, ThreadSummary, TurnSummary } from '@/store/protocol'
+import type { AgentDescriptor, ContextUsage, ThreadSummary, TurnSummary } from '@/store/protocol'
 import { api } from '@/lib/api'
 import { imageFiles, toAttachment, toBlock, attachmentSrc, type Attachment } from '@/lib/images'
 import { ContextMeter } from './ContextMeter'
@@ -18,7 +18,7 @@ interface ComposerProps {
   onPrompt: (text: string, images: ReturnType<typeof toBlock>[]) => Promise<boolean>
   onSteer: (text: string) => void
   onInterrupt: () => void
-  onOptions: (options: { model?: string; mode?: PermissionMode; effort?: string }) => void
+  onOptions: (options: { model?: string; settings?: Record<string, string> }) => void
   usage: ContextUsage | null
   lastTurn: TurnSummary | null
 }
@@ -27,7 +27,7 @@ interface ComposerProps {
 type Menu = { kind: 'slash' | 'file'; query: string; from: number } | null
 
 export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterrupt, onOptions, usage, lastTurn }: ComposerProps) {
-  const { t, locale, formatError } = useI18n()
+  const { t, formatError } = useI18n()
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [problem, setProblem] = useState<DisplayError | null>(null)
@@ -153,8 +153,10 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
     }
   }
 
-  const modeOptions = (capabilities?.modes ?? []).map((mode) => ({ value: mode, label: t(`mode.${mode}`) }))
-  const effortOptions = (capabilities?.efforts ?? []).map((e) => ({ value: e.id, label: effortLabel(locale, e.id, e.label) }))
+  // A thread stored before a knob existed has no value for it, and the
+  // harness will use its own default; showing that default is what the next
+  // turn will actually do.
+  const setting = (id: string) => thread.options.settings?.[id] ?? runtime?.defaults.settings?.[id] ?? ''
   const modelOptions = (runtime?.models ?? []).map((m) => ({ value: m.id, label: m.label === 'Default (recommended)' ? t('modelDefault') : m.label }))
 
   return (
@@ -245,7 +247,15 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-2 px-1">
-          {modeOptions.length > 0 && <Picker title={t('permissionMode')} value={thread.options.mode ?? ''} options={modeOptions} onChange={(mode) => onOptions({ mode: mode as PermissionMode })} />}
+          {(runtime?.groups ?? []).map((group) => (
+            <Picker
+              key={group.id}
+              title={group.label}
+              value={setting(group.id)}
+              options={group.options}
+              onChange={(value) => onOptions({ settings: { [group.id]: value } })}
+            />
+          ))}
           {!!capabilities?.max_images_per_prompt && (
             <>
               <input ref={fileInput} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { void attach(Array.from(event.target.files ?? [])); event.target.value = '' }} />
@@ -256,7 +266,6 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
           <ContextMeter usage={usage} lastTurn={lastTurn} className="ml-1" />
           <div className="flex-1" />
           {modelOptions.length > 0 && <Picker title={t('model')} value={thread.options.model ?? ''} options={modelOptions} onChange={(model) => onOptions({ model })} />}
-          {effortOptions.length > 0 && <Picker title={t('effort')} value={thread.options.effort ?? ''} options={effortOptions} onChange={(effort) => onOptions({ effort })} />}
           {canSteer && capabilities?.supports_interrupt !== false && <Button size="sm" variant="quiet" onClick={onInterrupt}><Square size={11} />{t('stop')}</Button>}
         </div>
       </div>

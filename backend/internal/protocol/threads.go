@@ -2,31 +2,72 @@ package protocol
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"time"
 )
 
-// ThreadOptions are the knobs set_options can change. A nil field means: on
-// create, the descriptor default; in set_options, unchanged; on a listed
-// thread, a knob this kind does not have (every knob it has is filled).
+// ThreadOptions are the knobs set_options can change. Settings is keyed by
+// OptionGroup.ID and its values are the harness's own, carried through
+// untouched. A nil model or an absent setting means: on create, the descriptor
+// default; in set_options, unchanged; on a listed thread, a knob this kind
+// does not have (every knob it has is filled).
 type ThreadOptions struct {
-	Model  *string         `json:"model"`
-	Mode   *PermissionMode `json:"mode"`
-	Effort *string         `json:"effort"` // an EffortOption.ID the descriptor lists
+	Model    *string           `json:"model"`
+	Settings map[string]string `json:"settings"`
 }
 
-// Merge returns these options with every non-nil field of next applied.
+// Setting is the value of one knob, or "" when this kind has no such knob.
+func (o ThreadOptions) Setting(id string) string { return o.Settings[id] }
+
+// Set stores one knob's value, allocating the map on first use.
+func (o *ThreadOptions) Set(id, value string) {
+	if o.Settings == nil {
+		o.Settings = map[string]string{}
+	}
+	o.Settings[id] = value
+}
+
+// Merge returns these options with every field next fills applied. Settings
+// merge key by key, so changing one knob never clears the others.
 func (o ThreadOptions) Merge(next ThreadOptions) ThreadOptions {
 	if next.Model != nil {
 		o.Model = next.Model
 	}
-	if next.Mode != nil {
-		o.Mode = next.Mode
-	}
-	if next.Effort != nil {
-		o.Effort = next.Effort
+	if len(next.Settings) > 0 {
+		merged := make(map[string]string, len(o.Settings)+len(next.Settings))
+		for id, value := range o.Settings {
+			merged[id] = value
+		}
+		for id, value := range next.Settings {
+			merged[id] = value
+		}
+		o.Settings = merged
 	}
 	return o
+}
+
+// UnmarshalJSON also reads the flat `effort` of rows stored before settings
+// existed: those values were already the harness's own spelling, so they move
+// across unchanged. Their `mode` was a vocabulary of ours that no harness
+// shares, so it is dropped and the kind's own default applies again.
+func (o *ThreadOptions) UnmarshalJSON(data []byte) error {
+	type plain ThreadOptions
+	var raw struct {
+		plain
+		Effort *string `json:"effort"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*o = ThreadOptions(raw.plain)
+	if raw.Effort != nil && o.Settings["effort"] == "" {
+		if o.Settings == nil {
+			o.Settings = map[string]string{}
+		}
+		o.Settings["effort"] = *raw.Effort
+	}
+	return nil
 }
 
 // ThreadKeyset is a cursor over (updated_at desc, thread_id desc). Every

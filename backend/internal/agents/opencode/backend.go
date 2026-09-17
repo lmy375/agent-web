@@ -13,14 +13,6 @@ import (
 )
 
 var capabilities = protocol.AgentCapabilities{
-	// OpenCode has agents, not permission modes: "build" does the work and
-	// "plan" only plans. How much it asks along the way is the owner's
-	// opencode config, which reaches the client as permission prompts either
-	// way, so no other mode would mean anything here.
-	Modes: []protocol.PermissionMode{protocol.ModeAsk, protocol.ModePlan},
-	// No reasoning-effort knob; the descriptor lists none and the client draws
-	// no control.
-	Efforts:            []protocol.EffortOption{},
 	MaxImagesPerPrompt: 10,
 	MaxImageBytes:      5 << 20,
 	SupportsSteer:      false,
@@ -146,11 +138,11 @@ func (b *Backend) RuntimeInfo(ctx context.Context) protocol.AgentRuntimeInfo {
 }
 
 func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
-	mode := protocol.ModeAsk
 	info := protocol.AgentRuntimeInfo{
 		DefaultCwd: b.opts.DefaultCwd,
-		Defaults:   protocol.ThreadOptions{Mode: &mode},
+		Defaults:   protocol.ThreadOptions{Settings: map[string]string{"agent": defaultAgent}},
 		Models:     []protocol.ModelOption{},
+		Groups:     []protocol.OptionGroup{},
 		Commands:   []protocol.SlashCommandInfo{},
 	}
 	if err := reachable(b.opts.Bin); err != nil {
@@ -198,7 +190,39 @@ func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
 		info.Defaults.Model = &info.Models[0].ID
 	}
 	info.Commands = b.commands(ctx, server)
+	// OpenCode has no permission mode and no effort: what it has is agents,
+	// and which ones exist is the owner's config, so they are probed rather
+	// than assumed.
+	if agents := b.agents(ctx, server); len(agents) > 0 {
+		info.Groups = append(info.Groups, protocol.OptionGroup{ID: "agent", Label: "agent", Options: agents})
+	}
 	return info
+}
+
+// agents lists the ones the owner can prompt with: OpenCode marks its internal
+// ones hidden and its delegates as subagents, and neither belongs in a menu.
+func (b *Backend) agents(ctx context.Context, server *serverProcess) []protocol.OptionChoice {
+	var list []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Mode        string `json:"mode"`
+		Hidden      bool   `json:"hidden"`
+	}
+	if err := server.request(ctx, "GET", "/agent", "", nil, &list); err != nil {
+		return nil
+	}
+	out := make([]protocol.OptionChoice, 0, len(list))
+	for _, agent := range list {
+		if agent.Mode != "primary" || agent.Hidden {
+			continue
+		}
+		choice := protocol.OptionChoice{Value: agent.Name, Label: agent.Name}
+		if agent.Description != "" {
+			choice.Description = &agent.Description
+		}
+		out = append(out, choice)
+	}
+	return out
 }
 
 func (b *Backend) commands(ctx context.Context, server *serverProcess) []protocol.SlashCommandInfo {
@@ -283,7 +307,7 @@ func (b *Backend) Prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 		return err
 	}
 
-	body := map[string]any{"parts": promptParts(cmd), "agent": agentFor(rec.Options.Mode)}
+	body := map[string]any{"parts": promptParts(cmd), "agent": agentFor(rec.Options)}
 	if rec.Options.Model != nil {
 		provider, model, ok := splitModelID(*rec.Options.Model)
 		if !ok {

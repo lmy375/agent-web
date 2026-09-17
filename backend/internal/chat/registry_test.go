@@ -162,9 +162,9 @@ func TestRecordsSurviveAReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open registry: %v", err)
 	}
-	mode := protocol.ModePlan
 	rec := record("claude_code:one", time.Now().UTC())
-	rec.NativeID, rec.Options = "native-1", protocol.ThreadOptions{Mode: &mode}
+	rec.NativeID = "native-1"
+	rec.Options = protocol.ThreadOptions{Settings: map[string]string{"permission-mode": "plan"}}
 	if err := registry.Put(rec); err != nil {
 		t.Fatalf("put: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestRecordsSurviveAReopen(t *testing.T) {
 	if got.Title != nil {
 		t.Fatalf("an unnamed thread came back with a title: %q", *got.Title)
 	}
-	if got.NativeID != "native-1" || got.Options.Mode == nil || *got.Options.Mode != protocol.ModePlan {
+	if got.NativeID != "native-1" || got.Options.Setting("permission-mode") != "plan" {
 		t.Fatalf("record came back changed: %+v", got)
 	}
 	if !got.UpdatedAt.Equal(rec.UpdatedAt) {

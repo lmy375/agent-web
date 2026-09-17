@@ -1,9 +1,9 @@
-import { effortLabel, LocalizedError, type DisplayError } from '@/i18n/core'
+import { LocalizedError, type DisplayError } from '@/i18n/core'
 import { useI18n } from '@/i18n'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '@/store/workspace'
-import type { AgentKind, PermissionMode, ThreadOptions } from '@/store/protocol'
+import type { AgentKind, ThreadOptions } from '@/store/protocol'
 import { AgentMark } from './AgentMark'
 import { DirectoryPicker } from './DirectoryPicker'
 import { Button } from './ui/button'
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
  *  thread; every option here is read from the chosen agent's descriptor, and
  *  each one can still be changed later from the composer. */
 export function NewThread({ onClose, initialCwd }: { onClose: () => void; initialCwd?: string }) {
-  const { t, locale, formatError } = useI18n()
+  const { t, formatError } = useI18n()
   const { agents, config, create } = useWorkspace()
   const navigate = useNavigate()
   const [chosen, setChosen] = useState<AgentKind | null>(null)
@@ -31,15 +31,15 @@ export function NewThread({ onClose, initialCwd }: { onClose: () => void; initia
 
   function setKind(next: AgentKind) {
     setChosen(next)
-    // A model id or an effort belongs to one agent, never to the next one.
+    // A model id or a knob's value belongs to one agent, never to the next one.
     setOverrides({})
   }
 
   const descriptor = agents.find((a) => a.kind === kind)
   const defaults = descriptor?.runtime.defaults
   const model = overrides.model ?? defaults?.model ?? ''
-  const mode = overrides.mode ?? defaults?.mode ?? ''
-  const effort = overrides.effort ?? defaults?.effort ?? ''
+  const groups = descriptor?.runtime.groups ?? []
+  const setting = (id: string) => overrides.settings?.[id] ?? defaults?.settings?.[id] ?? ''
 
   const modelOptions = (descriptor?.runtime.models ?? []).map((m) => ({
     value: m.id,
@@ -48,20 +48,17 @@ export function NewThread({ onClose, initialCwd }: { onClose: () => void; initia
   // An agent that names no default model lets the harness decide, and that has
   // to stay reachable once something else has been chosen.
   if (modelOptions.length && !defaults?.model) modelOptions.unshift({ value: '', label: t('modelDefault') })
-  const modeOptions = (descriptor?.capabilities.modes ?? []).map((m) => ({ value: m, label: t(`mode.${m}`) }))
-  const effortOptions = (descriptor?.capabilities.efforts ?? []).map((e) => ({
-    value: e.id,
-    label: effortLabel(locale, e.id, e.label),
-  }))
 
   async function start() {
     if (!kind) return
     setBusy(true)
     try {
+      const settings = Object.fromEntries(
+        groups.map((group) => [group.id, setting(group.id)]).filter(([, value]) => value),
+      )
       const thread = await create(kind, cwd, {
         ...(model ? { model } : {}),
-        ...(mode ? { mode: mode as PermissionMode } : {}),
-        ...(effort ? { effort } : {}),
+        ...(Object.keys(settings).length ? { settings } : {}),
       })
       onClose()
       navigate(`/t/${encodeURIComponent(thread.thread_id)}`)
@@ -99,7 +96,7 @@ export function NewThread({ onClose, initialCwd }: { onClose: () => void; initia
                 <span className="min-w-0 flex-1">
                   <span className="block text-[0.8125rem] font-medium">{agent.label}</span>
                   <span className="block truncate text-xs text-ink-soft">
-                    {blocked ?? t('agentOptions', { models: agent.runtime.models.length, modes: agent.capabilities.modes.length })}
+                    {blocked ?? t('agentOptions', { models: agent.runtime.models.length, knobs: agent.runtime.groups.length })}
                   </span>
                 </span>
               </button>
@@ -108,23 +105,24 @@ export function NewThread({ onClose, initialCwd }: { onClose: () => void; initia
           {!agents.length && <div className="text-xs text-ink-soft">{t('noAgents')}</div>}
         </div>
 
-        {(modelOptions.length > 0 || modeOptions.length > 0 || effortOptions.length > 0) && (
+        {(modelOptions.length > 0 || groups.length > 0) && (
           <div className="mt-4 flex flex-wrap gap-2.5">
             {modelOptions.length > 0 && (
               <Option label={t('model')}>
                 <Picker variant="field" title={t('model')} value={model} options={modelOptions} onChange={(next) => setOverrides((o) => ({ ...o, model: next }))} />
               </Option>
             )}
-            {modeOptions.length > 0 && (
-              <Option label={t('mode')}>
-                <Picker variant="field" title={t('mode')} value={mode} options={modeOptions} onChange={(next) => setOverrides((o) => ({ ...o, mode: next as PermissionMode }))} />
+            {groups.map((group) => (
+              <Option key={group.id} label={group.label}>
+                <Picker
+                  variant="field"
+                  title={group.label}
+                  value={setting(group.id)}
+                  options={group.options}
+                  onChange={(next) => setOverrides((o) => ({ ...o, settings: { ...o.settings, [group.id]: next } }))}
+                />
               </Option>
-            )}
-            {effortOptions.length > 0 && (
-              <Option label={t('effort')}>
-                <Picker variant="field" title={t('effort')} value={effort} options={effortOptions} onChange={(next) => setOverrides((o) => ({ ...o, effort: next }))} />
-              </Option>
-            )}
+            ))}
           </div>
         )}
 

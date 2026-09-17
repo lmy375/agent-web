@@ -15,21 +15,18 @@ import (
 // capabilities is constant for the process lifetime; the service enforces it
 // before any command reaches this backend.
 var capabilities = protocol.AgentCapabilities{
-	Modes: []protocol.PermissionMode{
-		protocol.ModeAsk, protocol.ModeAutoEdit, protocol.ModePlan,
-		protocol.ModeFullAuto, protocol.ModeDontAsk,
-	},
-	Efforts: []protocol.EffortOption{
-		{ID: "low", Label: "Low"}, {ID: "medium", Label: "Medium"},
-		{ID: "high", Label: "High"}, {ID: "xhigh", Label: "Extra high"},
-		{ID: "max", Label: "Max"},
-	},
 	MaxImagesPerPrompt: 20,
 	MaxImageBytes:      5 << 20,
 	SupportsSteer:      false, // the CLI has no mid-turn steer
 	ReportsCost:        true,  // result carries total_cost_usd
 	SupportsInterrupt:  true,
 }
+
+// permissionModes is the one knob the CLI does not describe over the control
+// protocol, so its choices are read off `claude --help` and kept in that
+// order. The initialize response adds the rest.
+var permissionModes = protocol.OptionGroup{ID: "permission-mode", Label: "permission-mode",
+	Options: protocol.Choices("acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan")}
 
 // runtimeTTL is how long a probe's answer is reused. The model and command
 // lists only change when the owner edits settings or installs a plugin.
@@ -105,14 +102,14 @@ func (b *Backend) RuntimeInfo(ctx context.Context) protocol.AgentRuntimeInfo {
 
 func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
 	defaults := protocol.ThreadOptions{
-		Model:  ptr("default"),
-		Mode:   modePtr(protocol.ModeAsk),
-		Effort: ptr("high"),
+		Model:    ptr("default"),
+		Settings: map[string]string{"permission-mode": "manual", "effort": "high"},
 	}
 	info := protocol.AgentRuntimeInfo{
 		DefaultCwd: b.opts.DefaultCwd,
 		Defaults:   defaults,
 		Models:     []protocol.ModelOption{},
+		Groups:     []protocol.OptionGroup{permissionModes},
 		Commands:   []protocol.SlashCommandInfo{},
 	}
 	if _, err := exec.LookPath(b.opts.Bin); err != nil {
@@ -160,9 +157,10 @@ func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
 		return info
 	}
 	info.Models = server.modelOptions()
+	info.Groups = server.optionGroups()
 	info.Commands = server.slashCommands()
-	if mode, ok := modeFromNative(server.CurrentPermissionMode); ok {
-		info.Defaults.Mode = &mode
+	if server.CurrentPermissionMode != "" {
+		info.Defaults.Settings["permission-mode"] = modeAsFlag(server.CurrentPermissionMode)
 	}
 	return info
 }
@@ -188,14 +186,14 @@ func (b *Backend) launcher(rec chat.ThreadRecord, resume bool) launch {
 		// thinking blocks and the UI has nothing to show.
 		"--thinking-display", "summarized",
 	}
-	if rec.Options.Mode != nil {
-		args = append(args, "--permission-mode", nativeMode(*rec.Options.Mode))
+	if mode := rec.Options.Setting("permission-mode"); mode != "" {
+		args = append(args, "--permission-mode", mode)
 	}
 	if rec.Options.Model != nil {
 		args = append(args, "--model", *rec.Options.Model)
 	}
-	if rec.Options.Effort != nil {
-		args = append(args, "--effort", *rec.Options.Effort)
+	if effort := rec.Options.Setting("effort"); effort != "" {
+		args = append(args, "--effort", effort)
 	}
 	if resume && rec.NativeID != "" {
 		args = append(args, "--resume="+rec.NativeID)
@@ -346,5 +344,3 @@ func localID(threadID string) string {
 }
 
 func ptr[T any](v T) *T { return &v }
-
-func modePtr(m protocol.PermissionMode) *protocol.PermissionMode { return &m }

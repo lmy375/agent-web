@@ -7,34 +7,40 @@ import (
 	"github.com/lmy375/agent-web/backend/internal/protocol"
 )
 
-// sandbox holds the knobs Codex splits a permission mode across. The sandbox
-// itself is spelled two ways by the same server: thread/start takes the plain
-// mode string, turn/start takes an internally tagged policy object.
-type sandbox struct {
-	approvalPolicy string
-	sandboxMode    string
-	policyType     string
+// sandboxPolicyTypes is the second spelling the app-server uses for its own
+// sandbox: thread/start takes the plain mode string, turn/start an internally
+// tagged policy object. Codex spells one knob two ways; the value the owner
+// picked is still Codex's, never ours.
+var sandboxPolicyTypes = map[string]string{
+	"read-only":          "readOnly",
+	"workspace-write":    "workspaceWrite",
+	"danger-full-access": "dangerFullAccess",
 }
 
-// policy is the turn/start spelling of the same sandbox.
-func (s sandbox) policy() map[string]any { return map[string]any{"type": s.policyType} }
+// What thread/start and turn/start fall back to when a thread predates these
+// knobs; they match the descriptor defaults, so a thread behaves the same
+// before and after the owner first touches a control.
+const (
+	defaultApprovalPolicy = "on-request"
+	defaultSandbox        = "workspace-write"
+)
 
-// permissionModes is the protocol's vocabulary expressed in Codex's. Plan is
-// absent: Codex has no plan mode, so the descriptor does not offer it.
-var permissionModes = map[protocol.PermissionMode]sandbox{
-	protocol.ModeAsk:      {"on-request", "workspace-write", "workspaceWrite"},
-	protocol.ModeAutoEdit: {"never", "workspace-write", "workspaceWrite"},
-	protocol.ModeFullAuto: {"never", "danger-full-access", "dangerFullAccess"},
-	protocol.ModeDontAsk:  {"untrusted", "read-only", "readOnly"},
-}
-
-func nativeMode(mode *protocol.PermissionMode) sandbox {
-	if mode != nil {
-		if native, ok := permissionModes[*mode]; ok {
-			return native
-		}
+func approvalPolicy(o protocol.ThreadOptions) string {
+	if policy := o.Setting("approvalPolicy"); policy != "" {
+		return policy
 	}
-	return permissionModes[protocol.ModeAsk]
+	return defaultApprovalPolicy
+}
+
+func sandboxMode(o protocol.ThreadOptions) string {
+	if mode := o.Setting("sandbox"); sandboxPolicyTypes[mode] != "" {
+		return mode
+	}
+	return defaultSandbox
+}
+
+func sandboxPolicy(o protocol.ThreadOptions) map[string]any {
+	return map[string]any{"type": sandboxPolicyTypes[sandboxMode(o)]}
 }
 
 // itemToolKinds is the rendering category for each item type Codex reports as
@@ -229,6 +235,37 @@ type modelEntry struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Description string `json:"description"`
+	// Which efforts this model takes, and which it starts on. The protocol
+	// calls effort a plain string for exactly this reason: the list is the
+	// model's to state, not ours to enumerate.
+	SupportedReasoningEfforts []struct {
+		ReasoningEffort string `json:"reasoningEffort"`
+		Description     string `json:"description"`
+	} `json:"supportedReasoningEfforts"`
+	DefaultReasoningEffort string `json:"defaultReasoningEffort"`
+}
+
+// effortChoices is every effort any listed model takes. A model that does not
+// take one rejects it at turn/start, which is the same answer the server would
+// give a narrower list that guessed wrong.
+func effortChoices(entries []modelEntry) []protocol.OptionChoice {
+	out := []protocol.OptionChoice{}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		for _, effort := range entry.SupportedReasoningEfforts {
+			if seen[effort.ReasoningEffort] {
+				continue
+			}
+			seen[effort.ReasoningEffort] = true
+			choice := protocol.OptionChoice{Value: effort.ReasoningEffort, Label: effort.ReasoningEffort}
+			if effort.Description != "" {
+				description := effort.Description
+				choice.Description = &description
+			}
+			out = append(out, choice)
+		}
+	}
+	return out
 }
 
 func modelOptions(entries []modelEntry) []protocol.ModelOption {

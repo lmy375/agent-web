@@ -7,31 +7,6 @@ import (
 	"github.com/lmy375/agent-web/backend/internal/protocol"
 )
 
-// permissionModes maps our vocabulary onto the CLI's --permission-mode.
-var permissionModes = map[protocol.PermissionMode]string{
-	protocol.ModeAsk:      "default",
-	protocol.ModeAutoEdit: "acceptEdits",
-	protocol.ModePlan:     "plan",
-	protocol.ModeFullAuto: "bypassPermissions",
-	protocol.ModeDontAsk:  "dontAsk",
-}
-
-func nativeMode(mode protocol.PermissionMode) string {
-	if native, ok := permissionModes[mode]; ok {
-		return native
-	}
-	return "default"
-}
-
-func modeFromNative(native string) (protocol.PermissionMode, bool) {
-	for mode, candidate := range permissionModes {
-		if candidate == native {
-			return mode, true
-		}
-	}
-	return "", false
-}
-
 // toolKinds is the rendering category for the CLI's built-in tools; anything
 // else falls through to the mcp__ prefix check and then to "other".
 var toolKinds = map[string]protocol.ToolKind{
@@ -269,6 +244,20 @@ func contextUsage(raw rawContextUsage) protocol.ContextUsage {
 	return usage
 }
 
+// reportedModes is the CLI's other spelling for one of its own modes: the flag
+// takes `manual`, and the session reports that same mode back as `default`.
+// Every other mode round-trips under one name. One knob, two spellings, both
+// the CLI's.
+var reportedModes = map[string]string{"default": "manual"}
+
+// modeAsFlag is a mode the CLI reported, under the name its flag takes.
+func modeAsFlag(reported string) string {
+	if flag, ok := reportedModes[reported]; ok {
+		return flag
+	}
+	return reported
+}
+
 // serverInfo is the initialize control response: everything the descriptor's
 // runtime half needs, answered by the CLI itself.
 type serverInfo struct {
@@ -278,9 +267,10 @@ type serverInfo struct {
 		ArgumentHint string `json:"argument_hint"`
 	} `json:"commands"`
 	Models []struct {
-		Value       string `json:"value"`
-		DisplayName string `json:"displayName"`
-		Description string `json:"description"`
+		Value                 string   `json:"value"`
+		DisplayName           string   `json:"displayName"`
+		Description           string   `json:"description"`
+		SupportedEffortLevels []string `json:"supportedEffortLevels"`
 	} `json:"models"`
 	CurrentPermissionMode string `json:"current_permission_mode"`
 	Account               *struct {
@@ -297,6 +287,27 @@ func (s serverInfo) modelOptions() []protocol.ModelOption {
 			option.Description = &description
 		}
 		out = append(out, option)
+	}
+	return out
+}
+
+// optionGroups is the CLI's own knobs. The effort levels are the ones the
+// models themselves advertise; --permission-mode has no such list, so its
+// choices are the ones `claude --help` prints, in the order it prints them.
+func (s serverInfo) optionGroups() []protocol.OptionGroup {
+	out := []protocol.OptionGroup{permissionModes}
+	efforts := []protocol.OptionChoice{}
+	seen := map[string]bool{}
+	for _, model := range s.Models {
+		for _, level := range model.SupportedEffortLevels {
+			if !seen[level] {
+				seen[level] = true
+				efforts = append(efforts, protocol.OptionChoice{Value: level, Label: level})
+			}
+		}
+	}
+	if len(efforts) > 0 {
+		out = append(out, protocol.OptionGroup{ID: "effort", Label: "effort", Options: efforts})
 	}
 	return out
 }

@@ -34,9 +34,15 @@ cd backend && AGENT_WEB_E2E=1 go test ./internal/server/ -run TestClaudeCodeTurn
 - `internal/protocol` carries no harness types. Every enum member has a comment
   naming the native value it maps to; that comment is the only place a harness
   name belongs in that package.
+- A knob is the harness's own, never ours. Each kind declares its knobs as
+  `OptionGroup`s whose id is the harness's own parameter name and whose values
+  reach it untranslated; the protocol stores them in `ThreadOptions.Settings`
+  and never reads one. A harness that splits a decision across two parameters
+  declares two groups — folding them into one invented mode is what once made
+  the same control mean opposite things on two harnesses.
 - The **service** applies every kind-neutral policy exactly once — cwd
-  validation, mode/effort checks, image limits, prompt idempotency, decision
-  matching, the steer gate. A backend that re-checks one of these is wrong; a
+  validation, option checks against the declared groups, image limits, prompt
+  idempotency, decision matching, the steer gate. A backend that re-checks one of these is wrong; a
   backend that needs a new check means the check belongs in the service.
 - Each command is its own `chat.Backend` method. Adding one must fail to compile
   in every adapter that has not implemented it — never fall through a switch.

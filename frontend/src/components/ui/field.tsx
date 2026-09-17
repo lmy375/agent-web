@@ -23,7 +23,7 @@ export function Picker({
 }: {
   value: string
   onChange: (value: string) => void
-  options: { value: string; label: string }[]
+  options: { value: string; label: string; description?: string | null }[]
   title?: string
   variant?: 'text' | 'field'
   className?: string
@@ -44,7 +44,7 @@ export function Picker({
         )}
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={o.value} value={o.value} title={o.description ?? undefined}>
             {o.label}
           </option>
         ))}

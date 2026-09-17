@@ -13,21 +13,23 @@ import (
 )
 
 var capabilities = protocol.AgentCapabilities{
-	// No plan: Codex has no plan mode, and a descriptor that lists a mode the
-	// harness cannot enter is worse than one that omits it.
-	Modes: []protocol.PermissionMode{
-		protocol.ModeAsk, protocol.ModeAutoEdit, protocol.ModeFullAuto, protocol.ModeDontAsk,
-	},
-	Efforts: []protocol.EffortOption{
-		{ID: "minimal", Label: "Minimal"}, {ID: "low", Label: "Low"},
-		{ID: "medium", Label: "Medium"}, {ID: "high", Label: "High"},
-		{ID: "xhigh", Label: "Extra high"},
-	},
 	MaxImagesPerPrompt: 10,
 	MaxImageBytes:      5 << 20,
 	SupportsSteer:      true, // turn/steer
 	ReportsCost:        false,
 	SupportsInterrupt:  true,
+}
+
+// approvalAndSandbox are the app-server's own parameters, with the values its
+// AskForApproval and SandboxMode schemas accept. Codex asks about approval and
+// about the sandbox separately, so they stay two controls: every pairing the
+// server accepts is reachable, and neither one has to stand for the other.
+// The effort list is not here -- the models advertise their own.
+var approvalAndSandbox = []protocol.OptionGroup{
+	{ID: "approvalPolicy", Label: "approvalPolicy", Options: protocol.Choices(
+		"untrusted", "on-request", "never")},
+	{ID: "sandbox", Label: "sandbox", Options: protocol.Choices(
+		"read-only", "workspace-write", "danger-full-access")},
 }
 
 type Options struct {
@@ -188,11 +190,15 @@ func (b *Backend) RuntimeInfo(ctx context.Context) protocol.AgentRuntimeInfo {
 }
 
 func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
-	mode := protocol.ModeAsk
 	info := protocol.AgentRuntimeInfo{
 		DefaultCwd: b.opts.DefaultCwd,
-		Defaults:   protocol.ThreadOptions{Mode: &mode, Effort: strPtr("medium")},
-		Models:     []protocol.ModelOption{},
+		Defaults: protocol.ThreadOptions{Settings: map[string]string{
+			"approvalPolicy": defaultApprovalPolicy,
+			"sandbox":        defaultSandbox,
+			"effort":         "medium",
+		}},
+		Models: []protocol.ModelOption{},
+		Groups: approvalAndSandbox,
 		// The app-server exposes no slash command list; the composer simply
 		// offers none for this kind.
 		Commands: []protocol.SlashCommandInfo{},
@@ -214,8 +220,14 @@ func (b *Backend) probe(ctx context.Context) protocol.AgentRuntimeInfo {
 		return info
 	}
 	info.Models = modelOptions(models.Data)
-	if len(info.Models) > 0 {
+	if efforts := effortChoices(models.Data); len(efforts) > 0 {
+		info.Groups = append(info.Groups, protocol.OptionGroup{ID: "effort", Label: "effort", Options: efforts})
+	}
+	if len(models.Data) > 0 {
 		info.Defaults.Model = &info.Models[0].ID
+		if effort := models.Data[0].DefaultReasoningEffort; effort != "" {
+			info.Defaults.Settings["effort"] = effort
+		}
 	}
 	return info
 }
@@ -299,14 +311,13 @@ func (b *Backend) Prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 		"clientUserMessageId": cmd.ClientMessageID,
 		"input":               turnInput(cmd),
 	}
-	native := nativeMode(rec.Options.Mode)
-	params["approvalPolicy"] = native.approvalPolicy
-	params["sandboxPolicy"] = native.policy()
+	params["approvalPolicy"] = approvalPolicy(rec.Options)
+	params["sandboxPolicy"] = sandboxPolicy(rec.Options)
 	if rec.Options.Model != nil {
 		params["model"] = *rec.Options.Model
 	}
-	if rec.Options.Effort != nil {
-		params["effort"] = *rec.Options.Effort
+	if effort := rec.Options.Setting("effort"); effort != "" {
+		params["effort"] = effort
 	}
 
 	if err := server.call(ctx, "turn/start", params, nil); err != nil {
@@ -329,11 +340,10 @@ func (b *Backend) openThread(ctx context.Context, server *client, rec chat.Threa
 		return rec.NativeID, nil
 	}
 
-	native := nativeMode(rec.Options.Mode)
 	params := map[string]any{
 		"cwd":            rec.Cwd,
-		"approvalPolicy": native.approvalPolicy,
-		"sandbox":        native.sandboxMode,
+		"approvalPolicy": approvalPolicy(rec.Options),
+		"sandbox":        sandboxMode(rec.Options),
 	}
 	if rec.Options.Model != nil {
 		params["model"] = *rec.Options.Model

@@ -98,10 +98,7 @@ func (s *session) ensureRunning(ctx context.Context, rec chat.ThreadRecord) erro
 	live, launched := s.proc, s.launchedEffort
 	s.mu.Unlock()
 
-	wanted := ""
-	if rec.Options.Effort != nil {
-		wanted = *rec.Options.Effort
-	}
+	wanted := rec.Options.Setting("effort")
 	if live != nil && launched == wanted {
 		return nil
 	}
@@ -127,10 +124,7 @@ func (s *session) startProcess(ctx context.Context, rec chat.ThreadRecord) error
 
 	s.mu.Lock()
 	s.proc = proc
-	s.launchedEffort = ""
-	if rec.Options.Effort != nil {
-		s.launchedEffort = *rec.Options.Effort
-	}
+	s.launchedEffort = rec.Options.Setting("effort")
 	s.mu.Unlock()
 
 	// initialize is what switches the CLI into the control protocol; until it
@@ -283,8 +277,8 @@ func (s *session) applyOptions(ctx context.Context, rec chat.ThreadRecord) error
 			return protocol.Errorf(protocol.CodeOptionInvalid, "cannot set model: %v", err)
 		}
 	}
-	if rec.Options.Mode != nil {
-		request := map[string]any{"subtype": "set_permission_mode", "mode": nativeMode(*rec.Options.Mode)}
+	if mode := rec.Options.Setting("permission-mode"); mode != "" {
+		request := map[string]any{"subtype": "set_permission_mode", "mode": mode}
 		if _, err := proc.control(ctx, request, controlTimeout); err != nil {
 			return protocol.Errorf(protocol.CodeOptionInvalid, "cannot set permission mode: %v", err)
 		}
@@ -585,8 +579,8 @@ func (s *session) onSystem(raw json.RawMessage) {
 				model := env.Model
 				rec.Options.Model = &model
 			}
-			if mode, ok := modeFromNative(env.PermissionMode); ok {
-				rec.Options.Mode = &mode
+			if env.PermissionMode != "" {
+				rec.Options.Set("permission-mode", modeAsFlag(env.PermissionMode))
 			}
 		})
 	case "compact_boundary":
@@ -603,8 +597,8 @@ func (s *session) onSystem(raw json.RawMessage) {
 	case "status":
 		// The owner can change the mode inside the CLI (a plan approval does);
 		// the row has to follow.
-		if mode, ok := modeFromNative(env.Mode); ok {
-			s.deps.Registry.Update(s.threadID, func(rec *chat.ThreadRecord) { rec.Options.Mode = &mode })
+		if env.Mode != "" {
+			s.deps.Registry.Update(s.threadID, func(rec *chat.ThreadRecord) { rec.Options.Set("permission-mode", modeAsFlag(env.Mode)) })
 		}
 	}
 }

@@ -14,19 +14,6 @@ const (
 	KindOpenCode   AgentKind = "opencode"    // `opencode serve`, HTTP + SSE
 )
 
-// PermissionMode is how much the harness asks before acting.
-// Claude: permission_mode. Codex: approvalPolicy + sandboxPolicy.
-// OpenCode: permission config. Claude's `auto` mode is not exposed.
-type PermissionMode string
-
-const (
-	ModeAsk      PermissionMode = "ask"       // Claude: default   | Codex: on-request + workspace-write | OpenCode: ask
-	ModeAutoEdit PermissionMode = "auto_edit" // Claude: acceptEdits | Codex: never + workspace-write    | OpenCode: allow edits
-	ModePlan     PermissionMode = "plan"      // Claude: plan      | Codex: none                         | OpenCode: plan agent
-	ModeFullAuto PermissionMode = "full_auto" // Claude: bypassPermissions | Codex: never + danger-full-access | OpenCode: allow all
-	ModeDontAsk  PermissionMode = "dont_ask"  // Claude: dontAsk   | Codex: untrusted + read-only        | OpenCode: deny
-)
-
 // ThreadRunState is the directory row's live state. A dead harness process is
 // resumed by the next prompt, never shown as a state.
 type ThreadRunState string

@@ -17,6 +17,7 @@ import (
 type fakeBackend struct {
 	kind     protocol.AgentKind
 	caps     protocol.AgentCapabilities
+	groups   []protocol.OptionGroup
 	prompts  []protocol.ClientCommand
 	pending  []protocol.InteractionRequest
 	steers   []string
@@ -29,12 +30,15 @@ func (f *fakeBackend) Label() string                            { return string(
 func (f *fakeBackend) Capabilities() protocol.AgentCapabilities { return f.caps }
 
 func (f *fakeBackend) RuntimeInfo(context.Context) protocol.AgentRuntimeInfo {
-	mode := protocol.ModeAsk
 	return protocol.AgentRuntimeInfo{
 		DefaultCwd: ".",
-		Defaults:   protocol.ThreadOptions{Mode: &mode, Model: ptr("m1")},
-		Models:     []protocol.ModelOption{{ID: "m1", Label: "M1"}},
-		Commands:   []protocol.SlashCommandInfo{},
+		Defaults: protocol.ThreadOptions{
+			Model:    ptr("m1"),
+			Settings: map[string]string{"permission-mode": "default"},
+		},
+		Models:   []protocol.ModelOption{{ID: "m1", Label: "M1"}},
+		Groups:   f.groups,
+		Commands: []protocol.SlashCommandInfo{},
 	}
 }
 
@@ -77,11 +81,12 @@ func newService(t *testing.T, backends ...chat.Backend) *chat.Service {
 
 func claudeLike(kind protocol.AgentKind) *fakeBackend {
 	return &fakeBackend{kind: kind, caps: protocol.AgentCapabilities{
-		Modes:              []protocol.PermissionMode{protocol.ModeAsk, protocol.ModePlan},
-		Efforts:            []protocol.EffortOption{{ID: "high", Label: "High"}},
 		MaxImagesPerPrompt: 2,
 		MaxImageBytes:      16,
 		SupportsSteer:      false,
+	}, groups: []protocol.OptionGroup{
+		{ID: "permission-mode", Label: "permission-mode", Options: protocol.Choices("default", "plan")},
+		{ID: "effort", Label: "effort", Options: protocol.Choices("high")},
 	}}
 }
 
@@ -121,17 +126,22 @@ func TestCapabilityGatesRunBeforeTheBackend(t *testing.T) {
 		t.Error("the steer reached a backend that does not support it")
 	}
 
-	autoEdit := protocol.ModeAutoEdit
 	setMode := protocol.ClientCommand{Type: protocol.CmdSetOptions,
-		Options: protocol.ThreadOptions{Mode: &autoEdit}}
+		Options: protocol.ThreadOptions{Settings: map[string]string{"permission-mode": "acceptEdits"}}}
 	if got := code(t, svc.Handle(ctx, id, setMode)); got != protocol.CodeOptionInvalid {
 		t.Errorf("unoffered mode: got %s", got)
 	}
 
 	setEffort := protocol.ClientCommand{Type: protocol.CmdSetOptions,
-		Options: protocol.ThreadOptions{Effort: ptr("max")}}
+		Options: protocol.ThreadOptions{Settings: map[string]string{"effort": "max"}}}
 	if got := code(t, svc.Handle(ctx, id, setEffort)); got != protocol.CodeOptionInvalid {
 		t.Errorf("unoffered effort: got %s", got)
+	}
+
+	setUnknown := protocol.ClientCommand{Type: protocol.CmdSetOptions,
+		Options: protocol.ThreadOptions{Settings: map[string]string{"sandbox": "read-only"}}}
+	if got := code(t, svc.Handle(ctx, id, setUnknown)); got != protocol.CodeOptionInvalid {
+		t.Errorf("a knob this kind does not have: got %s", got)
 	}
 	if len(backend.options) != 0 {
 		t.Error("an invalid option reached the backend")

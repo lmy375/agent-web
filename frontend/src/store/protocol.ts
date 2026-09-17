@@ -5,7 +5,6 @@
  */
 
 export type AgentKind = 'claude_code' | 'codex' | 'opencode'
-export type PermissionMode = 'ask' | 'auto_edit' | 'plan' | 'full_auto' | 'dont_ask'
 export type RunState = 'starting' | 'idle' | 'running' | 'waiting_input'
 export type TurnStatus = 'completed' | 'interrupted' | 'failed'
 export type ToolKind =
@@ -15,8 +14,8 @@ export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/w
 
 export interface ThreadOptions {
   model: string | null
-  mode: PermissionMode | null
-  effort: string | null
+  /** Keyed by OptionGroup.id, with the harness's own values. */
+  settings: Record<string, string>
 }
 
 export interface ThreadSummary {
@@ -70,9 +69,18 @@ export interface ModelOption {
   description: string | null
 }
 
-export interface EffortOption {
+export interface OptionChoice {
+  value: string
+  label: string
+  description: string | null
+}
+
+/** One knob a harness offers, named and valued the way that harness names and
+ *  values it. Nothing here is translated or folded together. */
+export interface OptionGroup {
   id: string
   label: string
+  options: OptionChoice[]
 }
 
 export interface SlashCommandInfo {
@@ -82,8 +90,6 @@ export interface SlashCommandInfo {
 }
 
 export interface AgentCapabilities {
-  modes: PermissionMode[]
-  efforts: EffortOption[]
   max_images_per_prompt: number
   max_image_bytes: number
   supports_steer: boolean
@@ -94,6 +100,7 @@ export interface AgentCapabilities {
 export interface AgentRuntimeInfo {
   unavailable_reason: string | null
   models: ModelOption[]
+  groups: OptionGroup[]
   default_cwd: string
   defaults: ThreadOptions
   commands: SlashCommandInfo[]

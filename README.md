@@ -37,9 +37,9 @@ works: the same transcript, the same permission card, the same composer.
 - Streamed text, reasoning and tool cards, with a subagent's own work nested
   under the call that started it
 - Permission prompts, questions and plan approvals, answered from the browser
-- Per-thread model, permission mode and reasoning effort — chosen when the
-  thread is created, changed any time after, and each rendered only when the
-  chosen agent actually has that knob
+- Per-thread model and whatever knobs the agent itself has — chosen when the
+  thread is created, changed any time after, and named and valued the way that
+  agent names and values them
 - Interrupt a running turn; steer one mid-flight where the harness supports it
 - A context ring in the composer, holding the window, the per-turn cost and
   what fills it, where the harness reports them
@@ -105,11 +105,14 @@ The backend then serves `frontend/dist` alongside the API on
 ## Starting a thread
 
 The new-thread dialog asks three things: which agent, how it should run, and
-where. The options row is drawn from the chosen agent's descriptor — model,
-permission mode, reasoning effort — so an agent with no reasoning knob shows one
-control fewer, and picking a different agent redraws the row instead of carrying
-over a model id that means nothing to it. Every option defaults to what that
-agent reports and can be changed later from the composer.
+where. The options row is drawn from the chosen agent's descriptor — its model
+list and its own knobs — so an agent with no reasoning knob shows one control
+fewer, and picking a different agent redraws the row instead of carrying over a
+value that means nothing to it. The knobs are the harness's: Claude Code offers
+`permission-mode` and `effort`, Codex offers `approvalPolicy` and `sandbox`
+separately because that is how the app-server asks, and OpenCode offers the
+`agent` list its own config defines. Every option defaults to what that agent
+reports and can be changed later from the composer.
 
 The working directory is the one choice a thread cannot revisit, so the dialog
 states it plainly: type a path, or open the folder button to browse the machine
@@ -254,7 +257,10 @@ Three design decisions worth calling out:
   pretending: Codex has no plan mode and Claude Code cannot steer a running
   turn, so neither control is drawn for them. OpenCode has no reasoning-effort
   knob, and reports a token count without a window size, so it gets a count
-  instead of a ring.
+  instead of a ring. Knob names are not translated either — a control says
+  `bypassPermissions` because that is the word the CLI takes, and a word that
+  reads the same in the UI and in `claude --help` is worth more than a pretty
+  one that reads the same on no harness at all.
 - One turn runs per thread at a time. A prompt sent while a turn is running is
   refused with `thread_busy`; press Stop first, or steer if the agent supports it.
 - A prompt carries a ULID. Re-sending the same one is a no-op, and the same id

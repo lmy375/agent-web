@@ -173,12 +173,12 @@ func (s *Service) CreateThread(ctx context.Context, req protocol.CreateThreadReq
 		return protocol.ThreadSummary{}, protocol.Errorf(protocol.CodeAgentUnavailable,
 			"no backend for agent kind %s", req.AgentKind)
 	}
-	if err := backend.Capabilities().CheckOptions(req.Options); err != nil {
-		return protocol.ThreadSummary{}, err
-	}
 	runtime := backend.RuntimeInfo(ctx)
 	if runtime.UnavailableReason != nil {
 		return protocol.ThreadSummary{}, protocol.Errorf(protocol.CodeAgentUnavailable, "%s", *runtime.UnavailableReason)
+	}
+	if err := runtime.CheckOptions(req.Options); err != nil {
+		return protocol.ThreadSummary{}, err
 	}
 	cwd := runtime.DefaultCwd
 	if req.Cwd != "" {
@@ -312,7 +312,9 @@ func (s *Service) Handle(ctx context.Context, threadID string, cmd protocol.Clie
 		return backend.Steer(ctx, threadID, cmd.Text)
 
 	case protocol.CmdSetOptions:
-		if err := backend.Capabilities().CheckOptions(cmd.Options); err != nil {
+		// The knobs a kind offers come from its probe, so the check reads the
+		// probe rather than a constant; it is cached and never fails hard.
+		if err := backend.RuntimeInfo(ctx).CheckOptions(cmd.Options); err != nil {
 			return err
 		}
 		s.registry.Update(threadID, func(r *ThreadRecord) { r.Options = r.Options.Merge(cmd.Options) })

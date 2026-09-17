@@ -7,22 +7,15 @@ import (
 	"github.com/lmy375/agent-web/backend/internal/protocol"
 )
 
-// agents is how the protocol's permission modes reach OpenCode: it has no
-// mode switch, it has agents, and the two it ships are exactly "do the work"
-// and "plan first". The finer-grained asking is the owner's opencode config,
-// which surfaces here as permission prompts either way.
-var agents = map[protocol.PermissionMode]string{
-	protocol.ModeAsk:  "build",
-	protocol.ModePlan: "plan",
-}
+// defaultAgent is what a thread prompts with before the owner picks one, and
+// what OpenCode itself treats as the default.
+const defaultAgent = "build"
 
-func agentFor(mode *protocol.PermissionMode) string {
-	if mode != nil {
-		if agent, ok := agents[*mode]; ok {
-			return agent
-		}
+func agentFor(o protocol.ThreadOptions) string {
+	if agent := o.Setting("agent"); agent != "" {
+		return agent
 	}
-	return "build"
+	return defaultAgent
 }
 
 // toolKinds maps OpenCode's built-in tool names onto rendering categories.
