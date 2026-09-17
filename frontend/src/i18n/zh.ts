@@ -39,6 +39,7 @@ export const zh = {
   "backToThreadList": "返回对话列表",
   "nameThread": "为对话命名",
   "rename": "重命名",
+  "delete": "删除",
   "deleteThread": "删除对话",
   "confirmDelete": "删除此对话及其全部聊天记录？",
   "workingDirectory": "工作目录",

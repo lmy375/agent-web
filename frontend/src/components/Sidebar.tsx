@@ -7,6 +7,7 @@ import { ChevronRight, Code2, FolderOpen, PanelLeftClose, Plus, Settings2, Trash
 import { useWorkspace } from '@/store/workspace'
 import type { ThreadSummary } from '@/store/protocol'
 import { AgentMark } from './AgentMark'
+import { ConfirmDialog } from './ConfirmDialog'
 import { NewThread } from './NewThread'
 import { Settings } from './Settings'
 import { SidebarResizer } from './SidebarResizer'
@@ -113,10 +114,10 @@ function ThreadRow({ thread, open }: { thread: ThreadSummary; open: boolean }) {
   const { t, locale } = useI18n()
   const navigate = useNavigate()
   const remove = useWorkspace((s) => s.remove)
+  const [confirming, setConfirming] = useState(false)
   const running = thread.run_state === 'running' || thread.run_state === 'starting'
 
   async function onDelete() {
-    if (!confirm(t('confirmDelete'))) return
     await remove(thread.thread_id)
     if (open) navigate('/')
   }
@@ -146,11 +147,20 @@ function ThreadRow({ thread, open }: { thread: ThreadSummary; open: boolean }) {
         variant="quiet"
         aria-label={t('deleteThread')}
         title={t('deleteThread')}
-        onClick={() => void onDelete()}
+        onClick={() => setConfirming(true)}
         className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 opacity-0 transition-opacity hover:bg-rule hover:text-failed group-hover:opacity-100 focus-visible:opacity-100"
       >
         <Trash2 size={14} strokeWidth={1.5} />
       </Button>
+      {confirming && (
+        <ConfirmDialog
+          title={t('deleteThread')}
+          message={t('confirmDelete')}
+          confirmLabel={t('delete')}
+          onConfirm={() => void onDelete()}
+          onClose={() => setConfirming(false)}
+        />
+      )}
     </div>
   )
 }

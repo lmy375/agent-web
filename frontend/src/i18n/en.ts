@@ -37,6 +37,7 @@ export const en = {
   "backToThreadList": "Back to the thread list",
   "nameThread": "Name this thread",
   "rename": "Rename",
+  "delete": "Delete",
   "deleteThread": "Delete thread",
   "confirmDelete": "Delete this thread and its transcript?",
   "workingDirectory": "Working directory",
