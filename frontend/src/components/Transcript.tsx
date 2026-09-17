@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import type { Item } from '@/store/transcript'
 import type { ImageBlock } from '@/store/protocol'
 import { Markdown } from './blocks/Markdown'
+import { CopyButton } from './blocks/CopyButton'
 import { ActivityGroup } from './blocks/ActivityGroup'
 import { presentTranscript } from '@/lib/transcriptPresentation'
 import { Images } from './blocks/Images'
@@ -65,13 +66,28 @@ export function Transcript({
 function renderItems(items: Item[], active: boolean): React.ReactNode {
   return presentTranscript(items).map((row) => {
     if (row.kind === 'text') {
-      return <div key={row.id} className="my-6 min-w-0 break-words text-[15px] leading-[1.85] md:text-base"><Markdown>{row.text}</Markdown></div>
+      return (
+        <div key={row.id} className="group/message my-6 min-w-0 break-words text-[15px] leading-[1.85] md:text-base">
+          <Markdown>{row.text}</Markdown>
+          <MessageActions text={row.text} />
+        </div>
+      )
     }
     if (row.kind === 'activity') {
       return <ActivityGroup key={row.id} entries={row.entries} active={active} renderChildren={(children, childActive) => renderItems(children, childActive)} />
     }
     return <ItemView key={row.id} item={row.item} />
   })
+}
+
+/** Quiet until the message is pointed at, so a long transcript stays prose. */
+function MessageActions({ text, className }: { text: string; className?: string }) {
+  if (!text) return null
+  return (
+    <div className={cn('mt-1 flex opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100', className)}>
+      <CopyButton text={text} />
+    </div>
+  )
 }
 
 function ItemView({ item }: { item: Exclude<Item, { kind: 'assistant' }> }) {
@@ -81,9 +97,12 @@ function ItemView({ item }: { item: Exclude<Item, { kind: 'assistant' }> }) {
       const text = item.blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n')
       const images = item.blocks.filter((b): b is ImageBlock => b.type === 'image')
       return (
-        <div className="my-6 ml-auto w-fit max-w-[90%] rounded-2xl bg-paper px-5 py-3.5">
-          {text && <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{text}</div>}
-          <Images blocks={images} />
+        <div className="group/message my-6 ml-auto w-fit max-w-[90%]">
+          <div className="rounded-2xl bg-paper px-5 py-3.5">
+            {text && <div className="whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed">{text}</div>}
+            <Images blocks={images} />
+          </div>
+          <MessageActions text={text} className="justify-end" />
         </div>
       )
     }

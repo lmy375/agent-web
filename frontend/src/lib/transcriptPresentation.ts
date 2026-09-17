@@ -61,7 +61,7 @@ export function latestThought(entries: ActivityEntry[]): string {
  * Emphasis with a single `*` or `_` is left alone: identifiers carry more
  * underscores than a thought carries italics.
  */
-export function plainText(markdown: string): string {
+function plainText(markdown: string): string {
   return markdown
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/^\s{0,3}(?:#{1,6}|>|[-*+])\s+/gm, '')

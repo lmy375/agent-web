@@ -81,6 +81,8 @@ export const en = {
   "freshStartHint": "Ask a question, explore your code, or bring an idea to life.",
   "workingEllipsis": "working…",
   "reconnecting": "Reconnecting.",
+  "copy": "Copy",
+  "copied": "Copied",
   "reasoning": "Reasoning",
   "reasoningStreaming": "Reasoning…",
   "hideReasoning": "Hide reasoning",

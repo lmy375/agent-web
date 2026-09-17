@@ -83,6 +83,8 @@ export const zh = {
   "freshStartHint": "提出问题、探索代码，或将想法变成现实。",
   "workingEllipsis": "正在处理…",
   "reconnecting": "正在重新连接。",
+  "copy": "复制",
+  "copied": "已复制",
   "reasoning": "思考过程",
   "reasoningStreaming": "正在思考…",
   "hideReasoning": "收起思考过程",
