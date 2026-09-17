@@ -140,8 +140,7 @@ Switching languages preserves the current conversation and unsent draft.
 
 UI translations live in `frontend/src/i18n/en.ts` and `zh.ts`, with shared typed
 keys. Conversation content, paths, model names and raw server diagnostics stay
-in their original language. Run `cd frontend && pnpm test` to check dictionary
-parity, interpolation, language selection, errors and date formatting.
+in their original language.
 
 ## Configuration
 
