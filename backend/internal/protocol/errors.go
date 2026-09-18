@@ -24,6 +24,7 @@ const (
 	CodeCwdInvalid            ErrorCode = "cwd_invalid"
 	CodeOptionInvalid         ErrorCode = "option_invalid"
 	CodeCursorInvalid         ErrorCode = "cursor_invalid"
+	CodeSettingsInvalid       ErrorCode = "settings_invalid"
 	CodeBadRequest            ErrorCode = "bad_request"
 	CodeUnauthorized          ErrorCode = "unauthorized"
 	CodeInternal              ErrorCode = "internal"
@@ -44,6 +45,7 @@ var httpStatus = map[ErrorCode]int{
 	CodeCwdInvalid:            http.StatusUnprocessableEntity,
 	CodeOptionInvalid:         http.StatusUnprocessableEntity,
 	CodeCursorInvalid:         http.StatusUnprocessableEntity,
+	CodeSettingsInvalid:       http.StatusUnprocessableEntity,
 	CodeBadRequest:            http.StatusBadRequest,
 	CodeUnauthorized:          http.StatusUnauthorized,
 	CodeInternal:              http.StatusInternalServerError,

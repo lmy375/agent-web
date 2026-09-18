@@ -1,7 +1,7 @@
 /** Re-export of the wire types the API client speaks, plus the request bodies. */
 export type {
   AgentDescriptor, ClientCommand, ServerEvent, ThreadDetail,
-  ThreadList, ThreadSummary, TranscriptPage,
+  ThreadList, ThreadSummary, TranscriptPage, WorkspaceSettings,
 } from '@/store/protocol'
 import type { AgentKind, ThreadOptions } from '@/store/protocol'
 

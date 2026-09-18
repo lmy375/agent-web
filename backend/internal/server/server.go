@@ -40,6 +40,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /api/auth/logout", s.logout)
 
 	api.HandleFunc("GET /api/config", s.getConfig)
+	api.HandleFunc("GET /api/settings", s.getSettings)
+	api.HandleFunc("PUT /api/settings", s.putSettings)
 	api.HandleFunc("GET /api/agents", s.listAgents)
 	api.HandleFunc("GET /api/fs/dirs", s.listDirs)
 	api.HandleFunc("GET /api/events", s.directoryEvents)
@@ -187,6 +189,31 @@ type configResponse struct {
 func (s *Server) getConfig(w http.ResponseWriter, _ *http.Request) {
 	home, _ := os.UserHomeDir()
 	writeJSON(w, http.StatusOK, configResponse{RootDir: s.cfg.RootDir, HomeDir: home})
+}
+
+func (s *Server) getSettings(w http.ResponseWriter, _ *http.Request) {
+	settings, err := s.svc.Settings()
+	if err != nil {
+		protocol.WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// putSettings replaces the whole settings resource, so the client always sends
+// both fields and a partial body is a mistake rather than a merge.
+func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
+	var settings protocol.WorkspaceSettings
+	if err := readJSON(r, &settings); err != nil {
+		protocol.WriteError(w, err)
+		return
+	}
+	saved, err := s.svc.SaveSettings(settings)
+	if err != nil {
+		protocol.WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
 }
 
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {

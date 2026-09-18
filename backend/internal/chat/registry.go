@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -34,14 +35,35 @@ type ThreadRecord struct {
 	Cwd       string                 `gorm:"not null"`
 	Title     *string                // NULL until the owner names the thread
 	Options   protocol.ThreadOptions `gorm:"serializer:json;not null"`
-	CreatedAt time.Time              `gorm:"not null"`
-	UpdatedAt time.Time              `gorm:"not null;index:threads_keyset,priority:1,sort:desc"`
+	// SystemPrompt is the workspace prompt as it stood when this thread was
+	// created, already reduced to what this kind can do with it. A thread keeps
+	// what it started with: the harnesses that take a prompt take it when the
+	// conversation opens, so following a later edit would mean one set of
+	// instructions for the turns before it and another for the turns after.
+	// The column has no NOT NULL because rows written before it existed read
+	// back as the zero value, which is no prompt.
+	SystemPrompt protocol.SystemPrompt `gorm:"serializer:json"`
+	CreatedAt    time.Time             `gorm:"not null"`
+	UpdatedAt    time.Time             `gorm:"not null;index:threads_keyset,priority:1,sort:desc"`
 }
 
 func (ThreadRecord) TableName() string { return "threads" }
 
-// Registry is the SQLite database of threads this web UI created, so the union
-// directory never lists a session someone started in a terminal.
+// settingsRow is the one row of workspace settings. Its id is pinned to 1, so
+// a save replaces the row rather than growing the table.
+type settingsRow struct {
+	ID           uint                  `gorm:"primaryKey"`
+	Locale       protocol.Locale       `gorm:"not null"`
+	SystemPrompt protocol.SystemPrompt `gorm:"serializer:json;not null"`
+}
+
+func (settingsRow) TableName() string { return "settings" }
+
+const settingsRowID = 1
+
+// Registry is this web UI's SQLite database: the threads it created, so the
+// union directory never lists a session someone started in a terminal, and the
+// workspace settings, so a preference follows the owner to any browser.
 type Registry struct {
 	db *gorm.DB
 
@@ -89,7 +111,7 @@ func NewRegistry(path string) (*Registry, error) {
 	// Migrating on every start is what keeps a schema change to editing the
 	// struct above. It only ever adds tables, columns and indexes, so a binary
 	// rolled back still reads the database a newer one left behind.
-	if err := db.AutoMigrate(&ThreadRecord{}); err != nil {
+	if err := db.AutoMigrate(&ThreadRecord{}, &settingsRow{}); err != nil {
 		return nil, err
 	}
 	// SQLite creates its files 0644. The records name every directory their
@@ -255,4 +277,23 @@ func (r *Registry) Page(cursor *protocol.ThreadKeyset, limit int) ([]protocol.Th
 		out = append(out, r.Summary(rec))
 	}
 	return out, hasMore
+}
+
+// Settings reads the workspace settings. An install where nothing has been
+// saved yet has no row, which is the defaults rather than a failure.
+func (r *Registry) Settings() (protocol.WorkspaceSettings, error) {
+	var row settingsRow
+	if err := r.db.First(&row, settingsRowID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return protocol.DefaultSettings(), nil
+		}
+		return protocol.WorkspaceSettings{}, err
+	}
+	return protocol.WorkspaceSettings{Locale: row.Locale, SystemPrompt: row.SystemPrompt}, nil
+}
+
+// SaveSettings replaces the single row. The caller has already validated it.
+func (r *Registry) SaveSettings(settings protocol.WorkspaceSettings) error {
+	row := settingsRow{ID: settingsRowID, Locale: settings.Locale, SystemPrompt: settings.SystemPrompt}
+	return r.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&row).Error
 }

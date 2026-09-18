@@ -21,6 +21,9 @@ var capabilities = protocol.AgentCapabilities{
 	SupportsSteer:      true, // steer queues a message the running turn picks up
 	ReportsCost:        true, // every assistant message carries usage.cost
 	SupportsInterrupt:  true,
+	// --system-prompt stands in for pi's own coding-assistant prompt;
+	// --append-system-prompt adds to it.
+	SystemPromptSupport: protocol.SystemPromptReplace,
 }
 
 // thinkingLevels is pi's one knob, named and valued as `pi --thinking` takes
@@ -205,6 +208,15 @@ func (b *Backend) launcher(rec chat.ThreadRecord, resume bool) launch {
 	}
 	if level := rec.Options.Setting("thinking"); level != "" {
 		args = append(args, "--thinking", level)
+	}
+	// pi's RPC has set_model and set_thinking_level and nothing for the system
+	// prompt, so this is the only way in -- which is also why the thread keeps
+	// the prompt it was created with across every relaunch.
+	switch rec.SystemPrompt.Mode {
+	case protocol.SystemPromptReplace:
+		args = append(args, "--system-prompt", rec.SystemPrompt.Text)
+	case protocol.SystemPromptAppend:
+		args = append(args, "--append-system-prompt", rec.SystemPrompt.Text)
 	}
 	return launch{bin: b.opts.Bin, args: args, cwd: rec.Cwd}
 }

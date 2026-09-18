@@ -1,6 +1,6 @@
 import type {
   AgentDescriptor, ClientCommand, CreateThread, ServerEvent,
-  ThreadDetail, ThreadList, ThreadSummary, TranscriptPage,
+  ThreadDetail, ThreadList, ThreadSummary, TranscriptPage, WorkspaceSettings,
 } from './apiTypes'
 
 export class ApiError extends Error {
@@ -38,6 +38,9 @@ export const api = {
   logout: () => post<AuthStatus>('/auth/logout', {}),
 
   config: () => call<ServerConfig>('/config'),
+  settings: () => call<WorkspaceSettings>('/settings'),
+  saveSettings: (settings: WorkspaceSettings) =>
+    call<WorkspaceSettings>('/settings', { method: 'PUT', body: JSON.stringify(settings) }),
   agents: () => call<AgentDescriptor[]>('/agents'),
   dirs: (path?: string) => call<DirListing>('/fs/dirs' + (path ? `?path=${encodeURIComponent(path)}` : '')),
 

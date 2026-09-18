@@ -3,7 +3,8 @@ import { LocalizedError, type DisplayError } from '@/i18n/core'
  *  machine has, and the thread directory with its live updates. */
 import { create } from 'zustand'
 import { api, subscribe, type AuthStatus, type ServerConfig } from '@/lib/api'
-import type { AgentDescriptor, AgentKind, ServerEvent, ThreadOptions, ThreadSummary } from './protocol'
+import { useLanguage } from '@/i18n'
+import type { AgentDescriptor, AgentKind, ServerEvent, ThreadOptions, ThreadSummary, WorkspaceSettings } from './protocol'
 
 interface WorkspaceState {
   auth: AuthStatus | null
@@ -11,6 +12,9 @@ interface WorkspaceState {
    *  other, there is nothing the app can honestly render. */
   unreachable: DisplayError | null
   config: ServerConfig | null
+  /** Null until the first load; every reader wants the server's answer rather
+   *  than a guess at it. */
+  settings: WorkspaceSettings | null
   agents: AgentDescriptor[]
   threads: ThreadSummary[]
   nextCursor: string | null
@@ -24,6 +28,7 @@ interface WorkspaceState {
   load: () => Promise<void>
   loadMore: () => Promise<void>
   watchDirectory: () => () => void
+  saveSettings: (settings: WorkspaceSettings) => Promise<void>
   create: (kind: AgentKind, cwd: string, options?: Partial<ThreadOptions>) => Promise<ThreadSummary>
   rename: (id: string, title: string) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -45,10 +50,17 @@ function merge(existing: ThreadSummary[], incoming: ThreadSummary[]): ThreadSumm
   return sorted([...rows.values()])
 }
 
+/** An install nobody has chosen a language for leaves the browser's own
+ *  preferences deciding, which is what the mirror already resolved. */
+function applyLocale(settings: WorkspaceSettings) {
+  if (settings.locale) useLanguage.getState().setLocale(settings.locale)
+}
+
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   auth: null,
   unreachable: null,
   config: null,
+  settings: null,
   agents: [],
   threads: [],
   nextCursor: null,
@@ -73,16 +85,25 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   },
 
   async signOut() {
-    set({ auth: await api.logout(), threads: [], agents: [] })
+    set({ auth: await api.logout(), threads: [], agents: [], settings: null })
   },
 
   async load() {
     try {
-      const [config, agents, list] = await Promise.all([api.config(), api.agents(), api.threads()])
-      set({ config, agents, threads: sorted(list.threads), nextCursor: list.next_cursor, error: null })
+      const [config, agents, list, settings] = await Promise.all([api.config(), api.agents(), api.threads(), api.settings()])
+      set({ config, agents, settings, threads: sorted(list.threads), nextCursor: list.next_cursor, error: null })
+      applyLocale(settings)
     } catch (error) {
       set({ error: error instanceof Error ? error : new LocalizedError('error.unreachable') })
     }
+  },
+
+  // The language applies once the server has taken it, so a save that fails
+  // leaves the app speaking the language the server still holds.
+  async saveSettings(next) {
+    const settings = await api.saveSettings(next)
+    set({ settings })
+    applyLocale(settings)
   },
 
   async loadMore() {

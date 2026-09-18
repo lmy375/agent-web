@@ -13,6 +13,22 @@ export type ToolKind =
   | 'todo' | 'mcp' | 'subagent' | 'web' | 'other'
 export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
 
+/** What the workspace prompt does to a harness's own instructions. */
+export type SystemPromptMode = 'append' | 'replace'
+
+export interface SystemPrompt {
+  text: string
+  mode: SystemPromptMode
+}
+
+/** What is true of the whole workspace rather than of one thread. An empty
+ *  `locale` is an install nobody has chosen a language for, which leaves the
+ *  browser's own preferences deciding. */
+export interface WorkspaceSettings {
+  locale: '' | 'en' | 'zh'
+  system_prompt: SystemPrompt
+}
+
 export interface ThreadOptions {
   model: string | null
   /** Keyed by OptionGroup.id, with the harness's own values. */
@@ -121,6 +137,9 @@ export interface AgentCapabilities {
   supports_steer: boolean
   reports_cost: boolean
   supports_interrupt: boolean
+  /** The most this harness does with the workspace prompt: replace its own
+   *  instructions, only add to them, or `''` for take none at all. */
+  system_prompt_support: '' | SystemPromptMode
 }
 
 export interface AgentRuntimeInfo {

@@ -45,6 +45,8 @@ works: the same transcript, the same permission card, the same composer.
 - Interrupt a running turn; steer one mid-flight where the harness supports it
 - A context ring in the composer, holding the window, the per-turn cost and
   what fills it, where the harness reports them
+- One system prompt for the whole workspace, appended to or standing in for
+  each harness's own instructions
 - Paste, drop or pick images into a message
 - Slash-command autocomplete and `@` file search, both from the server
 - Pick a working directory per thread: type a path, or browse the machine from
@@ -134,13 +136,42 @@ status line, and it is the only reasoning a collapsed group would otherwise
 show. Reasoning previews use an excerpt of the original text. All controls
 support Chinese and English and can be expanded with the keyboard.
 
+## System prompt
+
+Settings holds one system prompt for the whole workspace, and a mode saying
+what it does to a harness's own instructions: **Append** adds to them,
+**Replace where possible** stands in for them wherever the harness allows that
+and appends where it does not. What each agent does with it is drawn from its
+descriptor and shown beside it in the same dialog.
+
+| Agent | Append | Replace | What it becomes |
+| --- | --- | --- | --- |
+| Claude Code | yes | yes | `--append-system-prompt` / `--system-prompt` |
+| Codex | yes | yes | `developerInstructions` / `baseInstructions` on `thread/start` |
+| OpenCode | yes | no | the message's `system`, carried alongside the server's own baseline |
+| Pi | yes | yes | `--append-system-prompt` / `--system-prompt` |
+
+A thread is given the prompt as it stood when the thread was created, and keeps
+it: **editing the setting reaches the threads started next, never the
+conversations already under way.** Two of the harnesses take the prompt as a
+launch flag and a third takes it when the conversation opens, so following a
+later edit would mean one set of instructions for the turns before it and
+another for the turns after.
+
+Replacing is the whole prompt: a harness's own instructions include how it is
+told to use its tools, and standing those down changes how the agent works, not
+only how it writes.
+
 ## Interface language
 
 The frontend supports Simplified Chinese and English. The selector lives in
 settings, opened from the sidebar footer (and stands on its own on the sign-in
-and connection-error screens, which have no sidebar). The first visit follows the browser's supported language preferences,
-falling back to English; an explicit choice is saved locally for future visits.
-Switching languages preserves the current conversation and unsent draft.
+and connection-error screens, which have no sidebar). The choice is stored on
+the server, so it follows you to any browser; a copy in `localStorage` is what
+the first paint and the two screens with no session read, since neither can ask
+the server. An install nobody has chosen a language for follows the browser's
+supported language preferences, falling back to English. Switching languages
+preserves the current conversation and unsent draft.
 
 UI translations live in `frontend/src/i18n/en.ts` and `zh.ts`, with shared typed
 keys. Conversation content, paths, model names and raw server diagnostics stay
@@ -193,6 +224,7 @@ way (VPN, SSH tunnel, authenticating reverse proxy).
 | GET | `/api/auth/status` | Public. Whether a password is required and whether this browser is signed in |
 | POST | `/api/auth/login` / `logout` | Public. Sets or clears the auth cookie |
 | GET | `/api/config` | Default working directory and home directory |
+| GET / PUT | `/api/settings` | Interface language and the workspace system prompt |
 | GET | `/api/agents` | One descriptor per agent: capabilities, models, commands, defaults, why it is unavailable |
 | GET | `/api/fs/dirs` | Sub-directories of `?path=`, for the work-directory picker |
 | GET | `/api/events` | SSE. `thread_updated` and `thread_deleted` for every thread |
@@ -220,9 +252,10 @@ is exactly where a permission prompt would be.
 - [backend/internal/chat](backend/internal/chat) — `Service` dispatches by kind
   and is the single place kind-neutral policy lives. `Registry` is the SQLite
   database of threads this UI created, so the directory never lists a session
-  someone started in a terminal; `ThreadRecord` is both the row and the mapped
-  model, and the schema is migrated on every start. `Hub` fans events out to
-  per-thread and directory subscribers.
+  someone started in a terminal, and of the one row of workspace settings;
+  `ThreadRecord` is both the row and the mapped model, and the schema is
+  migrated on every start. `Hub` fans events out to per-thread and directory
+  subscribers.
 - [backend/internal/agents/claudecode](backend/internal/agents/claudecode) —
   `claude --print --input-format stream-json` plus the control channel
   multiplexed onto the same pipes (`initialize`, `interrupt`, `set_model`,
@@ -283,6 +316,10 @@ Three design decisions worth calling out:
 - A thread's working directory is fixed when it is created. Claude Code stores
   its transcript under a hash of that path and Pi under a folder named after
   it, so moving a thread would orphan its history.
+- The workspace prompt is read once per thread, when the thread is created. A
+  thread whose harness cannot replace its own instructions carries the prompt as
+  an append instead, which is what the agent list in settings says before you
+  save.
 - Live state is live. Pending interactions, context usage and the last turn's
   cost come from the running harness, so they are empty again after a server
   restart, while the transcript is not.

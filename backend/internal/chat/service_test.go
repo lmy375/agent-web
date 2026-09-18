@@ -15,10 +15,13 @@ import (
 // tests is that a backend never sees illegal input: every rule below is one the
 // service applies once so that no adapter has to.
 type fakeBackend struct {
-	kind     protocol.AgentKind
-	caps     protocol.AgentCapabilities
-	groups   []protocol.OptionGroup
-	prompts  []protocol.ClientCommand
+	kind    protocol.AgentKind
+	caps    protocol.AgentCapabilities
+	groups  []protocol.OptionGroup
+	prompts []protocol.ClientCommand
+	// records is the thread as each prompt saw it, which is how a test reads
+	// what the service stamped onto a row.
+	records  []chat.ThreadRecord
 	pending  []protocol.InteractionRequest
 	steers   []string
 	options  []protocol.ThreadOptions
@@ -50,8 +53,9 @@ func (f *fakeBackend) Transcript(context.Context, chat.ThreadRecord, string, int
 	return protocol.TranscriptPage{}, nil
 }
 
-func (f *fakeBackend) Prompt(_ context.Context, _ chat.ThreadRecord, cmd protocol.ClientCommand) error {
+func (f *fakeBackend) Prompt(_ context.Context, rec chat.ThreadRecord, cmd protocol.ClientCommand) error {
 	f.prompts = append(f.prompts, cmd)
+	f.records = append(f.records, rec)
 	return nil
 }
 func (f *fakeBackend) Interrupt(context.Context, string) error { return nil }
@@ -287,6 +291,94 @@ func TestCreateThreadRejectsAnUnusableDirectory(t *testing.T) {
 	})
 	if got := code(t, err); got != protocol.CodeCwdInvalid {
 		t.Errorf("missing directory: got %s", got)
+	}
+}
+
+// TestWorkspacePromptReachesThreadsByCreation covers the two rules the single
+// workspace prompt rests on: a harness that cannot stand its own instructions
+// down appends instead, and a thread keeps what it was created with when the
+// setting is edited afterwards.
+func TestWorkspacePromptReachesThreadsByCreation(t *testing.T) {
+	replacing := claudeLike(protocol.KindClaudeCode)
+	replacing.caps.SystemPromptSupport = protocol.SystemPromptReplace
+	appending := claudeLike(protocol.KindOpenCode)
+	appending.caps.SystemPromptSupport = protocol.SystemPromptAppend
+	svc := newService(t, replacing, appending)
+	ctx := context.Background()
+
+	wanted := protocol.SystemPrompt{Text: "answer in Portuguese", Mode: protocol.SystemPromptReplace}
+	if _, err := svc.SaveSettings(protocol.WorkspaceSettings{Locale: protocol.LocaleZH, SystemPrompt: wanted}); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	first := newThread(t, svc, protocol.KindClaudeCode)
+	appended := newThread(t, svc, protocol.KindOpenCode)
+	if err := svc.Handle(ctx, first, prompt("01JBXQ8G7M4K2P9R3T5V7W9Y10", "hello")); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if err := svc.Handle(ctx, appended, prompt("01JBXQ8G7M4K2P9R3T5V7W9Y11", "hello")); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if got := replacing.records[0].SystemPrompt; got != wanted {
+		t.Errorf("a harness that can replace got %+v", got)
+	}
+	if got := (appending.records[0].SystemPrompt); got != (protocol.SystemPrompt{Text: wanted.Text, Mode: protocol.SystemPromptAppend}) {
+		t.Errorf("a harness that can only append got %+v", got)
+	}
+
+	edited := protocol.SystemPrompt{Text: "answer in Dutch", Mode: protocol.SystemPromptAppend}
+	if _, err := svc.SaveSettings(protocol.WorkspaceSettings{Locale: protocol.LocaleZH, SystemPrompt: edited}); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	if err := svc.Handle(ctx, first, prompt("01JBXQ8G7M4K2P9R3T5V7W9Y12", "again")); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if got := replacing.records[1].SystemPrompt; got != wanted {
+		t.Errorf("an existing thread followed the edited setting: %+v", got)
+	}
+
+	later := newThread(t, svc, protocol.KindClaudeCode)
+	if err := svc.Handle(ctx, later, prompt("01JBXQ8G7M4K2P9R3T5V7W9Y13", "hello")); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if got := replacing.records[2].SystemPrompt; got != edited {
+		t.Errorf("a thread created after the edit got %+v", got)
+	}
+}
+
+// TestSettingsRoundTrip covers the resource itself: unconfigured reads as the
+// defaults, a save comes back, and a value no build speaks is refused.
+func TestSettingsRoundTrip(t *testing.T) {
+	svc := newService(t, claudeLike(protocol.KindClaudeCode))
+	initial, err := svc.Settings()
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if initial != protocol.DefaultSettings() {
+		t.Errorf("an unconfigured install reads as %+v", initial)
+	}
+
+	wanted := protocol.WorkspaceSettings{
+		Locale:       protocol.LocaleZH,
+		SystemPrompt: protocol.SystemPrompt{Text: "be terse", Mode: protocol.SystemPromptAppend},
+	}
+	if _, err := svc.SaveSettings(wanted); err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	stored, err := svc.Settings()
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if stored != wanted {
+		t.Errorf("read back %+v", stored)
+	}
+
+	_, err = svc.SaveSettings(protocol.WorkspaceSettings{Locale: "fr", SystemPrompt: wanted.SystemPrompt})
+	if got := code(t, err); got != protocol.CodeSettingsInvalid {
+		t.Errorf("a language this build does not speak: got %s", got)
+	}
+	if after, _ := svc.Settings(); after != wanted {
+		t.Error("a refused save changed the stored settings")
 	}
 }
 

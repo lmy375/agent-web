@@ -149,6 +149,27 @@ func (s *Service) sortedBackends() []Backend {
 	return out
 }
 
+func (s *Service) Settings() (protocol.WorkspaceSettings, error) {
+	settings, err := s.registry.Settings()
+	if err != nil {
+		return protocol.WorkspaceSettings{}, protocol.Errorf(protocol.CodeInternal, "cannot read settings: %v", err)
+	}
+	return settings, nil
+}
+
+// SaveSettings validates and stores the workspace settings. The system prompt
+// is not pushed anywhere: a thread is given the prompt that stood when it was
+// created, so this reaches the harnesses through the threads started next.
+func (s *Service) SaveSettings(settings protocol.WorkspaceSettings) (protocol.WorkspaceSettings, error) {
+	if err := settings.Validate(); err != nil {
+		return protocol.WorkspaceSettings{}, err
+	}
+	if err := s.registry.SaveSettings(settings); err != nil {
+		return protocol.WorkspaceSettings{}, protocol.Errorf(protocol.CodeInternal, "cannot store settings: %v", err)
+	}
+	return settings, nil
+}
+
 func (s *Service) ListThreads(cursor string, limit int) (protocol.ThreadList, error) {
 	var keyset *protocol.ThreadKeyset
 	if cursor != "" {
@@ -180,6 +201,10 @@ func (s *Service) CreateThread(ctx context.Context, req protocol.CreateThreadReq
 	if err := runtime.CheckOptions(req.Options); err != nil {
 		return protocol.ThreadSummary{}, err
 	}
+	settings, err := s.Settings()
+	if err != nil {
+		return protocol.ThreadSummary{}, err
+	}
 	cwd := runtime.DefaultCwd
 	if req.Cwd != "" {
 		validated, err := ValidateCwd(req.Cwd)
@@ -193,8 +218,12 @@ func (s *Service) CreateThread(ctx context.Context, req protocol.CreateThreadReq
 		AgentKind: req.AgentKind,
 		Cwd:       cwd,
 		Options:   runtime.Defaults.Merge(req.Options),
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		// The workspace prompt is read once, here, and kept on the row: it is
+		// what makes an edit reach the threads started after it and leave the
+		// conversations already under way alone.
+		SystemPrompt: backend.Capabilities().EffectiveSystemPrompt(settings.SystemPrompt),
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
 	}
 	if err := s.registry.Put(rec); err != nil {
 		return protocol.ThreadSummary{}, err

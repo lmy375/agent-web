@@ -20,6 +20,9 @@ var capabilities = protocol.AgentCapabilities{
 	SupportsSteer:      false, // the CLI has no mid-turn steer
 	ReportsCost:        true,  // result carries total_cost_usd
 	SupportsInterrupt:  true,
+	// --system-prompt replaces the CLI's own instructions outright;
+	// --append-system-prompt adds to them.
+	SystemPromptSupport: protocol.SystemPromptReplace,
 }
 
 // permissionModes is the one knob the CLI does not describe over the control
@@ -198,6 +201,15 @@ func (b *Backend) launcher(rec chat.ThreadRecord, resume bool) launch {
 	}
 	if effort := rec.Options.Setting("effort"); effort != "" {
 		args = append(args, "--effort", effort)
+	}
+	// The thread's prompt never changes, so --system-prompt-snapshot is left
+	// at its default: what the CLI records on the first request and replays on
+	// every resume is the same text this flag carries anyway.
+	switch rec.SystemPrompt.Mode {
+	case protocol.SystemPromptReplace:
+		args = append(args, "--system-prompt", rec.SystemPrompt.Text)
+	case protocol.SystemPromptAppend:
+		args = append(args, "--append-system-prompt", rec.SystemPrompt.Text)
 	}
 	if resume && rec.NativeID != "" {
 		args = append(args, "--resume="+rec.NativeID)

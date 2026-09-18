@@ -18,6 +18,9 @@ var capabilities = protocol.AgentCapabilities{
 	SupportsSteer:      true, // turn/steer
 	ReportsCost:        false,
 	SupportsInterrupt:  true,
+	// thread/start takes baseInstructions, which stands in for the agent's own
+	// prompt, and developerInstructions, which becomes one more section of it.
+	SystemPromptSupport: protocol.SystemPromptReplace,
 }
 
 // approvalAndSandbox are the app-server's own parameters, with the values its
@@ -360,6 +363,14 @@ func (b *Backend) openThread(ctx context.Context, server *client, rec chat.Threa
 	}
 	if rec.Options.Model != nil {
 		params["model"] = *rec.Options.Model
+	}
+	// Both fields belong to thread/start and thread/resume alike, so a thread
+	// the server reloaded carries the same instructions it opened with.
+	switch rec.SystemPrompt.Mode {
+	case protocol.SystemPromptReplace:
+		params["baseInstructions"] = rec.SystemPrompt.Text
+	case protocol.SystemPromptAppend:
+		params["developerInstructions"] = rec.SystemPrompt.Text
 	}
 
 	method := "thread/start"

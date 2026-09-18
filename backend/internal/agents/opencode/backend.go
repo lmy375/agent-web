@@ -18,6 +18,9 @@ var capabilities = protocol.AgentCapabilities{
 	SupportsSteer:      false,
 	ReportsCost:        true,
 	SupportsInterrupt:  true,
+	// A message's `system` is carried alongside the server's own baseline
+	// rather than in place of it, so this harness can only add to the prompt.
+	SystemPromptSupport: protocol.SystemPromptAppend,
 }
 
 type Options struct {
@@ -325,6 +328,11 @@ func (b *Backend) Prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	}
 
 	body := map[string]any{"parts": promptParts(cmd), "agent": agentFor(rec.Options)}
+	// Every message carries it: OpenCode stores the field on the user message
+	// and reads it back when it assembles that message's request.
+	if rec.SystemPrompt.Text != "" {
+		body["system"] = rec.SystemPrompt.Text
+	}
 	if rec.Options.Model != nil {
 		provider, model, ok := splitModelID(*rec.Options.Model)
 		if !ok {

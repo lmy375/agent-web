@@ -55,6 +55,26 @@ type AgentCapabilities struct {
 	SupportsSteer      bool `json:"supports_steer"` // Codex: turn/steer
 	ReportsCost        bool `json:"reports_cost"`   // Claude: total_cost_usd
 	SupportsInterrupt  bool `json:"supports_interrupt"`
+	// SystemPromptSupport is the most this harness does with a prompt of the
+	// owner's: Replace when it can be given one that stands in for its own
+	// instructions, Append when it can only add to them, and "" when it takes
+	// none at all. The client reads this to say per agent what the one
+	// workspace prompt will do there.
+	SystemPromptSupport SystemPromptMode `json:"system_prompt_support"`
+}
+
+// EffectiveSystemPrompt is what this harness actually does with the workspace
+// prompt. A replace asked of a harness that can only append is appended, which
+// is the whole of "replace wherever the harness allows it"; a harness that
+// takes no prompt at all gets none.
+func (c AgentCapabilities) EffectiveSystemPrompt(p SystemPrompt) SystemPrompt {
+	if p.Text == "" || c.SystemPromptSupport == "" {
+		return SystemPrompt{}
+	}
+	if p.Mode == SystemPromptReplace && c.SystemPromptSupport != SystemPromptReplace {
+		p.Mode = SystemPromptAppend
+	}
+	return p
 }
 
 func (c AgentCapabilities) CheckImages(images []ImageBlock) error {
