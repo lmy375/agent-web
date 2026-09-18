@@ -17,7 +17,7 @@ import { baseName, cn, homeRelative } from '@/lib/utils'
 
 export function Sidebar({ className, onCollapse }: { className?: string; onCollapse: () => void }) {
   const { t } = useI18n()
-  const { threads, agents, config, nextCursor, loadMore } = useWorkspace()
+  const { threads, config, nextCursor, loadMore } = useWorkspace()
   const [creating, setCreating] = useState<{ cwd?: string } | null>(null)
   const [settings, setSettings] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -93,9 +93,6 @@ export function Sidebar({ className, onCollapse }: { className?: string; onColla
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sunken"><Code2 size={16} strokeWidth={1.5} /></span>
         <div className="min-w-0 flex-1">
           <p className="text-[13px] text-ink-soft">{t('localWorkspace')}</p>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {agents.map((agent) => <span key={agent.kind} className={cn('text-[10px] text-ink-faint', agent.runtime.unavailable_reason && 'line-through opacity-50')}>{agent.label}</span>)}
-          </div>
         </div>
         <Settings2 size={16} strokeWidth={1.5} className="shrink-0 text-ink-faint" aria-label={t('settings')} />
       </button>

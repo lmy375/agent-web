@@ -158,6 +158,11 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
   // turn will actually do.
   const setting = (id: string) => thread.options.settings?.[id] ?? runtime?.defaults.settings?.[id] ?? ''
   const modelOptions = (runtime?.models ?? []).map((m) => ({ value: m.id, label: m.label === 'Default (recommended)' ? t('modelDefault') : m.label }))
+  const groups = (runtime?.groups ?? []).map(displayGroup)
+  // Keep the reasoning control next to the model it affects. The harnesses
+  // call this knob `effort` or `thinking`; other settings stay on the left.
+  const reasoningGroups = groups.filter((group) => group.id === 'effort' || group.id === 'thinking')
+  const otherGroups = groups.filter((group) => group.id !== 'effort' && group.id !== 'thinking')
 
   return (
     <div className="shrink-0 bg-surface">
@@ -247,7 +252,7 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-2 px-1">
-          {(runtime?.groups ?? []).map(displayGroup).map((group) => (
+          {otherGroups.map((group) => (
             <Picker
               key={group.id}
               title={group.label}
@@ -266,6 +271,15 @@ export function Composer({ thread, descriptor, busy, onPrompt, onSteer, onInterr
           <ContextMeter usage={usage} lastTurn={lastTurn} className="ml-1" />
           <div className="flex-1" />
           {modelOptions.length > 0 && <Picker title={t('model')} value={thread.options.model ?? ''} options={modelOptions} onChange={(model) => onOptions({ model })} />}
+          {reasoningGroups.map((group) => (
+            <Picker
+              key={group.id}
+              title={group.label}
+              value={setting(group.id)}
+              options={group.options}
+              onChange={(value) => onOptions({ settings: { [group.id]: value } })}
+            />
+          ))}
           {canSteer && capabilities?.supports_interrupt !== false && <Button size="sm" variant="quiet" onClick={onInterrupt}><Square size={11} />{t('stop')}</Button>}
         </div>
       </div>
