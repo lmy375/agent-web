@@ -1,7 +1,8 @@
 import { LocalizedError, type DisplayError } from '@/i18n/core'
 import { useI18n } from '@/i18n'
-import { LogOut } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowLeft, LogOut } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '@/store/workspace'
 import type { AgentDescriptor, SystemPromptMode, WorkspaceSettings } from '@/store/protocol'
 import { AgentMark } from './AgentMark'
@@ -14,16 +15,28 @@ import { cn } from '@/lib/utils'
  *  command-line argument, which is what the limit is really about. */
 const maxSystemPromptBytes = 16 << 10
 
+/** The page has its own address, so a reload can land on it before the
+ *  workspace has loaded. The draft waits for the server's answer rather than
+ *  starting from defaults, which would show an empty prompt over a workspace
+ *  that has one. */
+export function Settings({ sidebarOpen }: { sidebarOpen: boolean }) {
+  const settings = useWorkspace((s) => s.settings)
+  if (!settings) return <div className="flex-1" />
+  return <SettingsPage settings={settings} sidebarOpen={sidebarOpen} />
+}
+
 /** What is true of the whole workspace rather than of one thread: the language
  *  it speaks, the system prompt its threads are created with, and what this
  *  machine can run. The prompt is a draft until it is saved, so the language
  *  beside it waits for the same button rather than applying under the typing. */
-export function Settings({ onClose }: { onClose: () => void }) {
+function SettingsPage({ settings, sidebarOpen }: { settings: WorkspaceSettings; sidebarOpen: boolean }) {
   const { t, locale, formatError } = useI18n()
-  const { agents, auth, settings, saveSettings, signOut } = useWorkspace()
-  const [draft, setDraft] = useState<WorkspaceSettings>(
-    settings ?? { locale: '', system_prompt: { text: '', mode: 'append' } },
-  )
+  const { agents, auth, saveSettings, signOut } = useWorkspace()
+  const navigate = useNavigate()
+  /** Where the page was opened from, so leaving it returns the thread that was
+   *  on screen rather than the start page. */
+  const from = (useLocation().state as { from?: string } | null)?.from ?? '/'
+  const [draft, setDraft] = useState<WorkspaceSettings>(settings)
   const [problem, setProblem] = useState<DisplayError | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -34,7 +47,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
     setBusy(true)
     try {
       await saveSettings({ ...draft, locale: draft.locale || locale })
-      onClose()
+      navigate(from)
     } catch (error) {
       setProblem(error instanceof Error ? error : new LocalizedError('error.settings_invalid'))
     } finally {
@@ -43,99 +56,110 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-start justify-center bg-ink/25 p-6 pt-[8vh]" onClick={onClose}>
-      <div
-        role="dialog" aria-modal="true" aria-labelledby="settings-title"
-        className="max-h-[84vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-rule bg-paper p-6 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="settings-title" className="text-[0.9375rem] font-medium">{t('settings')}</h2>
+    <main className="flex min-w-0 flex-1 flex-col bg-surface">
+      <header className={cn('flex h-16 shrink-0 items-center gap-3 px-5 md:px-7', !sidebarOpen && 'md:pl-16')}>
+        <Link to={from} className="-ml-1 px-1 text-ink-faint hover:text-ink md:hidden" aria-label={t('backToThreads')}>
+          <ArrowLeft size={19} />
+        </Link>
+        <h1 className="text-[15px] font-medium">{t('settings')}</h1>
+        <div className="flex-1" />
+        {problem && <span className="min-w-0 truncate text-xs text-failed">{formatError(problem)}</span>}
+        <Button variant="quiet" onClick={() => navigate(from)}>{t('cancel')}</Button>
+        <Button variant="solid" disabled={busy || tooLong} onClick={() => void save()}>{t('save')}</Button>
+      </header>
 
-        <label className="mt-4 block">
-          <span className="mb-1.5 block text-xs text-ink-soft">{t('language')}</span>
-          <Picker
-            variant="field"
-            title={t('language')}
-            value={draft.locale || locale}
-            options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]}
-            onChange={(next) => setDraft((d) => ({ ...d, locale: next === 'zh' ? 'zh' : 'en' }))}
-          />
-        </label>
-
-        <div className="mt-4">
-          <div className="mb-1.5 flex items-baseline justify-between gap-2">
-            <label htmlFor="system-prompt" className="text-xs text-ink-soft">{t('systemPrompt')}</label>
-            <span className={cn('text-xs tabular-nums text-ink-faint', tooLong && 'text-failed')}>
-              {t('systemPromptSize', { count: size, limit: maxSystemPromptBytes })}
-            </span>
-          </div>
-          <Textarea
-            id="system-prompt"
-            rows={6}
-            value={draft.system_prompt.text}
-            placeholder={t('systemPromptPlaceholder')}
-            onChange={(e) => setDraft((d) => ({ ...d, system_prompt: { ...d.system_prompt, text: e.target.value } }))}
-            className="leading-relaxed"
-          />
-          <label className="mt-2 flex items-center gap-2">
-            <span className="text-xs text-ink-soft">{t('systemPromptMode')}</span>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-24 md:px-7">
+        <div className="mx-auto w-full max-w-3xl divide-y divide-rule">
+          <Row title={t('language')}>
             <Picker
-              title={t('systemPromptMode')}
-              value={draft.system_prompt.mode}
-              options={[
-                { value: 'append', label: t('systemPromptAppend') },
-                { value: 'replace', label: t('systemPromptReplace') },
-              ]}
-              onChange={(next) =>
-                setDraft((d) => ({ ...d, system_prompt: { ...d.system_prompt, mode: next as SystemPromptMode } }))}
+              variant="field"
+              className="max-w-56"
+              title={t('language')}
+              value={draft.locale || locale}
+              options={[{ value: 'zh', label: '中文' }, { value: 'en', label: 'English' }]}
+              onChange={(next) => setDraft((d) => ({ ...d, locale: next === 'zh' ? 'zh' : 'en' }))}
             />
-          </label>
-        </div>
+          </Row>
 
-        <div className="mt-4 rounded-[5px] border border-rule bg-surface px-3 py-2.5">
-          <div className="mb-1.5 text-xs text-ink-soft">{t('howItWorks')}</div>
-          <ul className="grid gap-1 text-xs leading-relaxed text-ink-soft">
-            <li>{t('systemPromptNoteShared')}</li>
-            <li>{t('systemPromptNoteReplace')}</li>
-            <li>{t('systemPromptNoteNew')}</li>
-            <li>{t('systemPromptNoteScope')}</li>
-          </ul>
-        </div>
+          <Row title={t('systemPrompt')}>
+            <Textarea
+              id="system-prompt"
+              aria-label={t('systemPrompt')}
+              rows={10}
+              value={draft.system_prompt.text}
+              placeholder={t('systemPromptPlaceholder')}
+              onChange={(e) => setDraft((d) => ({ ...d, system_prompt: { ...d.system_prompt, text: e.target.value } }))}
+              className="min-h-40 resize-y leading-relaxed"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="text-xs text-ink-soft">{t('systemPromptMode')}</span>
+              <Picker
+                title={t('systemPromptMode')}
+                value={draft.system_prompt.mode}
+                options={[
+                  { value: 'append', label: t('systemPromptAppend') },
+                  { value: 'replace', label: t('systemPromptReplace') },
+                ]}
+                onChange={(next) =>
+                  setDraft((d) => ({ ...d, system_prompt: { ...d.system_prompt, mode: next as SystemPromptMode } }))}
+              />
+              <span className="flex-1" />
+              <span className={cn('text-xs tabular-nums text-ink-faint', tooLong && 'text-failed')}>
+                {t('systemPromptSize', { count: size, limit: maxSystemPromptBytes })}
+              </span>
+            </div>
 
-        <div className="mt-4">
-          <div className="mb-1.5 text-xs text-ink-soft">{t('agentsOnThisMachine')}</div>
-          <div className="grid gap-1.5">
-            {agents.map((agent) => (
-              <div
-                key={agent.kind}
-                className={cn('flex items-center gap-2.5 rounded-[5px] border border-rule bg-surface px-2.5 py-2', agent.runtime.unavailable_reason && 'opacity-55')}
-              >
-                <AgentMark kind={agent.kind} label={agent.label} />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[0.8125rem] font-medium">{agent.label}</span>
-                  <span className="block truncate text-xs text-ink-soft">{agent.runtime.unavailable_reason ?? t('ready')}</span>
-                </span>
-                <span className="shrink-0 rounded-[4px] bg-sunken px-1.5 py-0.5 text-xs text-ink-soft">
-                  {t(promptBehaviour(agent, draft.system_prompt.mode))}
-                </span>
-              </div>
-            ))}
-            {!agents.length && <div className="text-xs text-ink-soft">{t('noAgents')}</div>}
-          </div>
-        </div>
+            <div className="mt-4 rounded-[5px] border border-rule bg-paper px-3 py-2.5">
+              <div className="mb-1.5 text-xs text-ink-soft">{t('howItWorks')}</div>
+              <ul className="grid gap-1 text-xs leading-relaxed text-ink-soft">
+                <li>{t('systemPromptNoteShared')}</li>
+                <li>{t('systemPromptNoteReplace')}</li>
+                <li>{t('systemPromptNoteNew')}</li>
+                <li>{t('systemPromptNoteScope')}</li>
+              </ul>
+            </div>
+          </Row>
 
-        {problem && <div className="mt-2 text-xs text-failed">{formatError(problem)}</div>}
+          <Row title={t('agentsOnThisMachine')}>
+            <div className="grid gap-1.5">
+              {agents.map((agent) => (
+                <div
+                  key={agent.kind}
+                  className={cn('flex items-center gap-2.5 rounded-[5px] border border-rule bg-paper px-2.5 py-2', agent.runtime.unavailable_reason && 'opacity-55')}
+                >
+                  <AgentMark kind={agent.kind} label={agent.label} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[0.8125rem] font-medium">{agent.label}</span>
+                    <span className="block truncate text-xs text-ink-soft">{agent.runtime.unavailable_reason ?? t('ready')}</span>
+                  </span>
+                  <span className="shrink-0 rounded-[4px] bg-sunken px-1.5 py-0.5 text-xs text-ink-soft">
+                    {t(promptBehaviour(agent, draft.system_prompt.mode))}
+                  </span>
+                </div>
+              ))}
+              {!agents.length && <div className="text-xs text-ink-soft">{t('noAgents')}</div>}
+            </div>
+          </Row>
 
-        <div className="mt-5 flex items-center gap-2">
           {auth?.password_required && (
-            <Button variant="quiet" onClick={() => void signOut()}><LogOut size={15} strokeWidth={1.5} />{t('signOut')}</Button>
+            <Row title={t('account')}>
+              <Button onClick={() => void signOut()}><LogOut size={15} strokeWidth={1.5} />{t('signOut')}</Button>
+            </Row>
           )}
-          <div className="flex-1" />
-          <Button variant="quiet" onClick={onClose}>{t('cancel')}</Button>
-          <Button variant="solid" disabled={busy || tooLong} onClick={() => void save()}>{t('save')}</Button>
         </div>
       </div>
-    </div>
+    </main>
+  )
+}
+
+/** One setting to a row: what it is on the left, what you set it with on the
+ *  right. The two columns stack once the pane is too narrow to hold both. */
+function Row({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="grid gap-3 py-7 md:grid-cols-[12rem_1fr] md:gap-10">
+      <h2 className="text-[0.875rem] font-medium">{title}</h2>
+      <div className="min-w-0">{children}</div>
+    </section>
   )
 }
 

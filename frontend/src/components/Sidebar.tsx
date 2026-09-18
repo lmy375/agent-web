@@ -2,14 +2,13 @@ import { relativeTime } from '@/i18n/core'
 import { useI18n } from '@/i18n'
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { NavLink, useMatch, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { ChevronRight, Code2, FolderOpen, PanelLeftClose, Plus, Settings2, Trash2 } from 'lucide-react'
 import { useWorkspace } from '@/store/workspace'
 import type { ThreadSummary } from '@/store/protocol'
 import { AgentMark } from './AgentMark'
 import { ConfirmDialog } from './ConfirmDialog'
 import { NewThread } from './NewThread'
-import { Settings } from './Settings'
 import { SidebarResizer } from './SidebarResizer'
 import { Button } from './ui/button'
 import { useSidebarWidth } from '@/lib/sidebarWidth'
@@ -18,8 +17,10 @@ import { baseName, cn, homeRelative } from '@/lib/utils'
 export function Sidebar({ className, onCollapse }: { className?: string; onCollapse: () => void }) {
   const { t } = useI18n()
   const { threads, config, nextCursor, loadMore } = useWorkspace()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [creating, setCreating] = useState<{ cwd?: string } | null>(null)
-  const [settings, setSettings] = useState(false)
+  const onSettings = useMatch('/settings') !== null
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const { width, setWidth, commit } = useSidebarWidth()
   const openThread = useMatch('/t/:id')?.params.id ?? null
@@ -86,9 +87,9 @@ export function Sidebar({ className, onCollapse }: { className?: string; onColla
       </nav>
 
       <button
-        onClick={() => setSettings(true)}
+        onClick={() => !onSettings && navigate('/settings', { state: { from: pathname } })}
         title={t('settings')}
-        className="flex shrink-0 items-center gap-3 border-t border-rule/70 px-5 py-4 text-left transition-colors hover:bg-sunken/60"
+        className={cn('flex shrink-0 items-center gap-3 border-t border-rule/70 px-5 py-4 text-left transition-colors hover:bg-sunken/60', onSettings && 'bg-sunken/60')}
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sunken"><Code2 size={16} strokeWidth={1.5} /></span>
         <div className="min-w-0 flex-1">
@@ -98,7 +99,6 @@ export function Sidebar({ className, onCollapse }: { className?: string; onColla
       </button>
       <SidebarResizer className="hidden md:block" width={width} onResize={setWidth} onCommit={commit} />
       {creating && <NewThread initialCwd={creating.cwd} onClose={() => setCreating(null)} />}
-      {settings && <Settings onClose={() => setSettings(false)} />}
     </aside>
   )
 }

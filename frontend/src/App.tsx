@@ -8,6 +8,7 @@ import { BrowserRouter, Navigate, Route, Routes, useMatch } from 'react-router-d
 import { useWorkspace } from '@/store/workspace'
 import { Sidebar } from '@/components/Sidebar'
 import { ThreadView } from '@/components/ThreadView'
+import { Settings } from '@/components/Settings'
 import { SignIn } from '@/components/SignIn'
 import { Button } from '@/components/ui/button'
 
@@ -69,18 +70,22 @@ function Workspace() {
   )
 }
 
-/** One pane at a time on a narrow screen: the directory, or the thread. */
+/** One pane at a time on a narrow screen: the directory, or whatever has an
+ *  address of its own -- a thread, or the settings page. */
 function Panes() {
   const { t } = useI18n()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const onThread = useMatch('/t/:id') !== null
+  const onSettings = useMatch('/settings') !== null
+  const onPage = onThread || onSettings
   return (
     <div className="flex h-full bg-surface">
-      <Sidebar onCollapse={() => setSidebarOpen(false)} className={onThread ? (sidebarOpen ? 'hidden md:flex' : 'hidden') : (sidebarOpen ? 'flex' : 'flex md:hidden')} />
+      <Sidebar onCollapse={() => setSidebarOpen(false)} className={onPage ? (sidebarOpen ? 'hidden md:flex' : 'hidden') : (sidebarOpen ? 'flex' : 'flex md:hidden')} />
       {!sidebarOpen && <Button size="icon" variant="quiet" className="fixed left-4 top-4 z-10 hidden md:inline-flex" onClick={() => setSidebarOpen(true)} aria-label={t('expandSidebar')} title={t('expandSidebar')}><PanelLeftOpen size={18} /></Button>}
       <Routes>
         <Route path="/" element={<Start />} />
         <Route path="/t/:id" element={<ThreadView sidebarOpen={sidebarOpen} />} />
+        <Route path="/settings" element={<Settings sidebarOpen={sidebarOpen} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

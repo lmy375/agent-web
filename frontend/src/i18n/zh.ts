@@ -24,6 +24,7 @@ export const zh = {
   "agentReady": "{agent} 已就绪",
   "signOut": "退出登录",
   "settings": "设置",
+  "account": "账户",
   "agentsOnThisMachine": "本机 Agent",
   "save": "保存",
   "systemPrompt": "系统提示词",

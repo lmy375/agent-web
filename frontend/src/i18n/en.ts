@@ -22,6 +22,7 @@ export const en = {
   "agentReady": "{agent} is ready",
   "signOut": "Sign out",
   "settings": "Settings",
+  "account": "Account",
   "agentsOnThisMachine": "Agents on this machine",
   "save": "Save",
   "systemPrompt": "System prompt",
