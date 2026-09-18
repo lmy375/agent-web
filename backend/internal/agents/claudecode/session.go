@@ -29,7 +29,14 @@ type session struct {
 	// turn is the client_message_id of the running turn, empty for a turn the
 	// CLI opened by itself to read a finished background task; running is the
 	// fact that a turn is under way at all.
-	turn         string
+	turn string
+	// turnStarted is when this turn was claimed; zero means none is running,
+	// which is what liveState reports a running turn from.
+	turnStarted time.Time
+	// turnUsage is each assistant message's accounting keyed by message id.
+	// The CLI writes one assistant line per content block and repeats the
+	// message's whole usage on each, so an id is overwritten rather than added.
+	turnUsage    map[string]protocol.Usage
 	running      bool
 	interrupted  bool
 	contextUsage *protocol.ContextUsage
@@ -60,6 +67,7 @@ func newSession(threadID string, deps chat.Deps, launcher func(chat.ThreadRecord
 		state:           protocol.StateIdle,
 		pending:         map[string]*pending{},
 		blockTools:      map[int]string{},
+		turnUsage:       map[string]protocol.Usage{},
 		assembled:       map[string][]protocol.ContentBlock{},
 		backgroundTasks: []protocol.BackgroundTask{},
 		lastActive:      time.Now(),
@@ -110,12 +118,27 @@ func (s *session) liveState() chat.LiveState {
 	}
 	tasks := make([]protocol.BackgroundTask, len(s.backgroundTasks))
 	copy(tasks, s.backgroundTasks)
+	var current *protocol.RunningTurn
+	if !s.turnStarted.IsZero() {
+		spent := s.spent()
+		current = &protocol.RunningTurn{ClientMessageID: s.turn, StartedAt: s.turnStarted, Usage: &spent}
+	}
 	return chat.LiveState{
 		Pending:         requests,
 		ContextUsage:    s.contextUsage,
+		CurrentTurn:     current,
 		LastTurn:        s.lastTurn,
 		BackgroundTasks: tasks,
 	}
+}
+
+// spent totals what this turn has cost so far. The caller holds the lock.
+func (s *session) spent() protocol.Usage {
+	var total protocol.Usage
+	for _, one := range s.turnUsage {
+		total.Add(one)
+	}
+	return total
 }
 
 // idleSince reports how long the session has had no process work, and whether
@@ -202,6 +225,7 @@ func (s *session) onExit(err error) {
 	wasRunning := s.running
 	s.proc = nil
 	s.turn, s.running = "", false
+	s.turnStarted = time.Time{}
 	s.mu.Unlock()
 
 	s.resolveAllPending()
@@ -254,6 +278,9 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	s.mu.Lock()
 	s.turn, s.running = cmd.ClientMessageID, true
 	s.interrupted = false
+	s.turnStarted = time.Now().UTC()
+	s.turnUsage = map[string]protocol.Usage{}
+	started := s.turnStarted
 	s.lastActive = time.Now()
 	proc := s.proc
 	s.mu.Unlock()
@@ -270,12 +297,13 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	if err := proc.writeJSON(message); err != nil {
 		s.mu.Lock()
 		s.turn, s.running = "", false
+		s.turnStarted = time.Time{}
 		s.mu.Unlock()
 		return protocol.Errorf(protocol.CodeAgentUnavailable, "%v", err)
 	}
 
 	s.setState(protocol.StateRunning)
-	s.publish(protocol.TurnStarted(s.threadID, cmd.ClientMessageID))
+	s.publish(protocol.TurnStarted(s.threadID, cmd.ClientMessageID, started))
 	// The CLI does not echo an owner prompt back, so the echo is ours to emit
 	// -- and emitting it from the very blocks that were sent means the
 	// transcript the browser renders cannot drift from what the model saw.
@@ -484,8 +512,11 @@ func (s *session) openTurn() {
 		return
 	}
 	s.turn, s.running = "", true
+	s.turnStarted = time.Now().UTC()
+	s.turnUsage = map[string]protocol.Usage{}
+	started := s.turnStarted
 	s.mu.Unlock()
-	s.publish(protocol.TurnStarted(s.threadID, ""))
+	s.publish(protocol.TurnStarted(s.threadID, "", started))
 	s.setState(protocol.StateRunning)
 }
 
@@ -576,8 +607,18 @@ func (s *session) onAssistant(raw json.RawMessage) {
 	whole := make([]protocol.ContentBlock, 0, len(settled)+len(blocks))
 	whole = append(append(whole, settled...), contentBlocks(blocks)...)
 	s.assembled[env.Message.ID] = whole
+	turn, running := s.turn, s.running
+	var spent *protocol.Usage
+	if reported := usage(env.Message.Usage); reported != nil && running {
+		s.turnUsage[env.Message.ID] = *reported
+		total := s.spent()
+		spent = &total
+	}
 	s.mu.Unlock()
 	s.publish(protocol.AssistantMessage(s.threadID, env.Message.ID, whole, env.ParentToolUseID))
+	if spent != nil {
+		s.publish(protocol.TurnUsage(s.threadID, turn, *spent))
+	}
 }
 
 type userEnvelope struct {
@@ -615,6 +656,15 @@ func (s *session) onResult(raw json.RawMessage) {
 	turn, interrupted := s.turn, s.interrupted
 	s.turn, s.running, s.interrupted = "", false, false
 	summary := turnSummary(result, interrupted)
+	// The CLI's result line is the authority on what the whole turn cost; the
+	// per-message totals only carry the count while it is still running.
+	if summary.Usage == nil {
+		spent := s.spent()
+		summary.Usage = &spent
+	}
+	summary.StartedAt, summary.FinishedAt = s.turnStarted, time.Now().UTC()
+	s.turnStarted = time.Time{}
+	s.turnUsage = map[string]protocol.Usage{}
 	s.lastTurn = &summary
 	// Every message of the turn is complete; nothing is left to append to.
 	s.assembled = map[string][]protocol.ContentBlock{}

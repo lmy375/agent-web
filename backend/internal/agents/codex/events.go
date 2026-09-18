@@ -62,8 +62,14 @@ func (b *Backend) onNotification(method string, params json.RawMessage) {
 		t.mu.Lock()
 		t.turnID = payload.Turn.ID
 		clientMessageID := t.turn
+		// A turn Codex opened by itself was never claimed by a prompt, so this
+		// notification is the earliest this thread knows of it.
+		if t.turnStarted.IsZero() {
+			t.turnStarted = time.Now().UTC()
+		}
+		started := t.turnStarted
 		t.mu.Unlock()
-		b.deps.Publish(protocol.TurnStarted(threadID, clientMessageID))
+		b.deps.Publish(protocol.TurnStarted(threadID, clientMessageID, started))
 		b.setState(threadID, protocol.StateRunning)
 
 	case "turn/completed":
@@ -92,8 +98,12 @@ func (b *Backend) onNotification(method string, params json.RawMessage) {
 			usage := payload.TokenUsage.contextUsage()
 			t.mu.Lock()
 			t.contextUsage, t.lastUsage = &usage, payload.TokenUsage.turnUsage()
+			clientMessageID, spent, running := t.turn, *t.lastUsage, !t.turnStarted.IsZero()
 			t.mu.Unlock()
 			b.deps.Publish(protocol.ContextUsageChanged(threadID, usage))
+			if running {
+				b.deps.Publish(protocol.TurnUsage(threadID, clientMessageID, spent))
+			}
 		}
 
 	case "thread/name/updated":
@@ -138,7 +148,11 @@ func (b *Backend) onTurnCompleted(threadID string, t *thread, params json.RawMes
 		status = protocol.TurnInterrupted
 	}
 	// Codex reports no cost, so the summary carries only what it does report.
-	summary := protocol.TurnSummary{Status: status, Usage: t.lastUsage}
+	summary := protocol.TurnSummary{
+		Status: status, Usage: t.lastUsage,
+		StartedAt: t.turnStarted, FinishedAt: time.Now().UTC(),
+	}
+	t.turnStarted = time.Time{}
 	t.lastTurn = &summary
 	t.mu.Unlock()
 

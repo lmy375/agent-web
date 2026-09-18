@@ -44,6 +44,9 @@ type session struct {
 	turnUsage  protocol.Usage
 	turnCost   float64
 	turnFailed bool
+	// turnStarted is when this turn was claimed, and doubles as the fact that
+	// one is under way at all for liveState; zero means no running turn.
+	turnStarted time.Time
 	// contextWindow is the current model's, learnt from get_state.
 	contextWindow int
 	contextUsage  *protocol.ContextUsage
@@ -97,7 +100,15 @@ func (s *session) liveState() chat.LiveState {
 	for _, p := range s.pending {
 		requests = append(requests, p.request)
 	}
-	return chat.LiveState{Pending: requests, ContextUsage: s.contextUsage, LastTurn: s.lastTurn}
+	var current *protocol.RunningTurn
+	if !s.turnStarted.IsZero() {
+		spent := s.turnUsage
+		current = &protocol.RunningTurn{ClientMessageID: s.turn, StartedAt: s.turnStarted, Usage: &spent}
+	}
+	return chat.LiveState{
+		Pending: requests, ContextUsage: s.contextUsage,
+		CurrentTurn: current, LastTurn: s.lastTurn,
+	}
 }
 
 func (s *session) process() *process {
@@ -204,6 +215,7 @@ func (s *session) onExit(err error) {
 	wasRunning := s.running
 	s.proc = nil
 	s.turn, s.running, s.interrupted = "", false, false
+	s.turnStarted = time.Time{}
 	s.mu.Unlock()
 
 	s.cancelPending()
@@ -230,6 +242,8 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	// this prompt is the turn's first user message whatever else arrives.
 	s.turn, s.running, s.interrupted, s.echoed = cmd.ClientMessageID, true, false, false
 	s.turnUsage, s.turnCost, s.turnFailed = protocol.Usage{}, 0, false
+	s.turnStarted = time.Now().UTC()
+	started := s.turnStarted
 	s.lastActive = time.Now()
 	s.mu.Unlock()
 
@@ -249,7 +263,7 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 		return protocol.Errorf(protocol.CodeAgentUnavailable, "pi refused the prompt: %v", err)
 	}
 	s.setState(protocol.StateRunning)
-	s.publish(protocol.TurnStarted(s.threadID, cmd.ClientMessageID))
+	s.publish(protocol.TurnStarted(s.threadID, cmd.ClientMessageID, started))
 	return nil
 }
 
@@ -257,6 +271,7 @@ func (s *session) prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 func (s *session) abandonTurn() {
 	s.mu.Lock()
 	s.turn, s.running, s.interrupted = "", false, false
+	s.turnStarted = time.Time{}
 	s.mu.Unlock()
 	s.setState(protocol.StateIdle)
 }
@@ -410,8 +425,10 @@ func (s *session) openTurn() {
 	}
 	s.turn, s.running, s.interrupted, s.echoed = "", true, false, false
 	s.turnUsage, s.turnCost, s.turnFailed = protocol.Usage{}, 0, false
+	s.turnStarted = time.Now().UTC()
+	started := s.turnStarted
 	s.mu.Unlock()
-	s.publish(protocol.TurnStarted(s.threadID, ""))
+	s.publish(protocol.TurnStarted(s.threadID, "", started))
 	s.setState(protocol.StateRunning)
 }
 
@@ -493,7 +510,9 @@ func (s *session) onMessageEnd(raw json.RawMessage) {
 
 	var clientMessageID *string
 	var window *protocol.ContextUsage
+	var spent *protocol.Usage
 	s.mu.Lock()
+	turn := s.turn
 	switch m.Role {
 	case "user":
 		if !s.echoed && s.turn != "" {
@@ -502,18 +521,16 @@ func (s *session) onMessageEnd(raw json.RawMessage) {
 		s.echoed = true
 	case "assistant":
 		if m.Usage != nil {
-			s.turnUsage.InputTokens += m.Usage.Input
-			s.turnUsage.OutputTokens += m.Usage.Output
-			s.turnUsage.CacheReadTokens += m.Usage.CacheRead
-			s.turnUsage.CacheWriteTokens += m.Usage.CacheWrite
-			if m.Usage.Reasoning != nil {
-				reasoning := *m.Usage.Reasoning
-				if s.turnUsage.ReasoningTokens != nil {
-					reasoning += *s.turnUsage.ReasoningTokens
-				}
-				s.turnUsage.ReasoningTokens = &reasoning
-			}
+			s.turnUsage.Add(protocol.Usage{
+				InputTokens:      m.Usage.Input,
+				OutputTokens:     m.Usage.Output,
+				CacheReadTokens:  m.Usage.CacheRead,
+				CacheWriteTokens: m.Usage.CacheWrite,
+				ReasoningTokens:  m.Usage.Reasoning,
+			})
 			s.turnCost += m.Usage.Cost.Total
+			total := s.turnUsage
+			spent = &total
 		}
 		if m.StopReason == "error" {
 			s.turnFailed = true
@@ -546,6 +563,9 @@ func (s *session) onMessageEnd(raw json.RawMessage) {
 	}
 	if window != nil {
 		s.publish(protocol.ContextUsageChanged(s.threadID, *window))
+	}
+	if spent != nil {
+		s.publish(protocol.TurnUsage(s.threadID, turn, *spent))
 	}
 }
 
@@ -606,9 +626,13 @@ func (s *session) onSettled() {
 	case s.turnFailed:
 		status = protocol.TurnFailed
 	}
-	usage, cost := s.turnUsage, s.turnCost
-	summary := protocol.TurnSummary{Status: status, Usage: &usage, CostUSD: &cost}
+	spent, cost := s.turnUsage, s.turnCost
+	summary := protocol.TurnSummary{
+		Status: status, Usage: &spent, CostUSD: &cost,
+		StartedAt: s.turnStarted, FinishedAt: time.Now().UTC(),
+	}
 	s.lastTurn = &summary
+	s.turnStarted = time.Time{}
 	s.turn, s.running, s.interrupted, s.messageID = "", false, false, ""
 	s.blockTools = map[int]string{}
 	s.mu.Unlock()

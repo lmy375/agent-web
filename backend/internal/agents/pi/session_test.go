@@ -136,7 +136,8 @@ func TestUnpromptedTurnIsBracketed(t *testing.T) {
 
 // The assistant stream: deltas keyed by content index under the message id
 // pi's timestamp gives, the settled message carrying the whole content, and
-// the window reading taken from the message's usage.
+// the window reading and the turn's running total taken from the message's
+// usage.
 func TestAssistantStreamAssembly(t *testing.T) {
 	s, published, _ := testSession(t)
 	startTurn(s, "01JBXQ8G7M4K2P9R3T5V7W9Y1Z")
@@ -148,7 +149,7 @@ func TestAssistantStreamAssembly(t *testing.T) {
 	s.onEvent("message_update", json.RawMessage(`{"type":"message_update","assistantMessageEvent":{"type":"toolcall_end","contentIndex":1,"toolCall":{"type":"toolCall","id":"call_1","name":"bash","arguments":{"command":"ls"}}}}`))
 	s.onEvent("message_end", json.RawMessage(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Let me look."},{"type":"toolCall","id":"call_1","name":"bash","arguments":{"command":"ls"}}],"usage":{"input":1000,"output":50,"cacheRead":200,"cacheWrite":0,"totalTokens":1250,"cost":{"total":0.0125}},"stopReason":"toolUse","timestamp":5000}}`))
 
-	want := []string{"text_delta", "tool_use_start", "tool_input_delta", "tool_use_end", "assistant_message", "context_usage"}
+	want := []string{"text_delta", "tool_use_start", "tool_input_delta", "tool_use_end", "assistant_message", "context_usage", "turn_usage"}
 	if got := eventTypes(*published); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("published %v, want %v", got, want)
 	}
@@ -174,6 +175,10 @@ func TestAssistantStreamAssembly(t *testing.T) {
 	usage := find[protocol.ContextUsageEvent](t, *published)
 	if usage.Usage.TotalTokens != 1250 || usage.Usage.MaxTokens != 272000 {
 		t.Fatalf("context usage is %+v", usage.Usage)
+	}
+	spent := find[protocol.TurnUsageEvent](t, *published)
+	if spent.Usage.InputTokens != 1000 || spent.Usage.OutputTokens != 50 || spent.Usage.CacheReadTokens != 200 {
+		t.Fatalf("turn usage is %+v", spent.Usage)
 	}
 }
 

@@ -218,6 +218,7 @@ func (s *Service) GetThread(threadID string) (protocol.ThreadDetail, error) {
 		Summary:         s.registry.Summary(rec),
 		Pending:         live.Pending,
 		ContextUsage:    live.ContextUsage,
+		CurrentTurn:     live.CurrentTurn,
 		LastTurn:        live.LastTurn,
 		BackgroundTasks: live.BackgroundTasks,
 	}, nil

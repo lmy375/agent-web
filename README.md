@@ -216,7 +216,7 @@ is exactly where a permission prompt would be.
 
 - [backend/internal/protocol](backend/internal/protocol) — the shared vocabulary.
   Closed enums with a comment on each member naming the native value it maps to;
-  18 server events; 5 client commands; 3 interaction kinds.
+  22 server events; 5 client commands; 3 interaction kinds.
 - [backend/internal/chat](backend/internal/chat) — `Service` dispatches by kind
   and is the single place kind-neutral policy lives. `Registry` is the SQLite
   database of threads this UI created, so the directory never lists a session

@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { api, subscribe } from '@/lib/api'
 import type {
   BackgroundTask, ClientCommand, ContextUsage, ImageBlock, InteractionDecision, InteractionRequest,
-  ServerEvent, ThreadSummary, TurnSummary, UserBlock,
+  RunningTurn, ServerEvent, ThreadSummary, TurnSummary, UserBlock,
 } from './protocol'
 import { applyEvent, dropLocalPrompt, emptyTranscript, localPrompt, prependHistory, type Transcript } from './transcript'
 
@@ -16,6 +16,8 @@ interface ThreadState {
   /** Every background task the harness is carrying; each event replaces the set. */
   backgroundTasks: BackgroundTask[]
   contextUsage: ContextUsage | null
+  /** The turn under way, from `turn_started` or from a resync mid-turn. */
+  currentTurn: RunningTurn | null
   lastTurn: TurnSummary | null
   /** Older history exists; the transcript header offers to load it. */
   olderCursor: string | null
@@ -57,6 +59,7 @@ export const useThread = create<ThreadState>((set, get) => ({
   pending: [],
   backgroundTasks: [],
   contextUsage: null,
+  currentTurn: null,
   lastTurn: null,
   olderCursor: null,
   loading: true,
@@ -71,8 +74,8 @@ export const useThread = create<ThreadState>((set, get) => ({
   open(id) {
     set({
       id, summary: null, transcript: emptyTranscript(), pending: [], backgroundTasks: [],
-      contextUsage: null, lastTurn: null, olderCursor: null, loading: true, prompting: false,
-      error: null,
+      contextUsage: null, currentTurn: null, lastTurn: null, olderCursor: null, loading: true,
+      prompting: false, error: null,
     })
 
     const unsubscribe = subscribe(id, {
@@ -85,8 +88,16 @@ export const useThread = create<ThreadState>((set, get) => ({
           case 'context_usage':
             set({ contextUsage: event.usage })
             break
+          case 'turn_started':
+            set({ currentTurn: { client_message_id: event.client_message_id, started_at: event.started_at, usage: null } })
+            break
+          case 'turn_usage': {
+            const running = get().currentTurn
+            if (running) set({ currentTurn: { ...running, usage: event.usage } })
+            break
+          }
           case 'turn_finished':
-            set({ lastTurn: event.summary, transcript: applyEvent(get().transcript, event) })
+            set({ currentTurn: null, lastTurn: event.summary, transcript: applyEvent(get().transcript, event) })
             break
           case 'interaction_request':
             set({ pending: [...get().pending.filter((r) => r.request_id !== event.request.request_id), event.request] })
@@ -115,6 +126,7 @@ export const useThread = create<ThreadState>((set, get) => ({
           pending: detail.pending,
           backgroundTasks: detail.background_tasks,
           contextUsage: detail.context_usage,
+          currentTurn: detail.current_turn,
           lastTurn: detail.last_turn,
           transcript: prependHistory(get().transcript, page.entries),
           olderCursor: page.next_cursor,

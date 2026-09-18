@@ -9,6 +9,7 @@ import { Transcript } from './Transcript'
 import { Composer } from './Composer'
 import { InteractionPanel } from './dialogs/InteractionPanel'
 import { BackgroundTasks } from './BackgroundTasks'
+import { RunStatus } from './RunStatus'
 import { AgentMark } from './AgentMark'
 import { Button } from './ui/button'
 import { baseName, cn, homeRelative } from '@/lib/utils'
@@ -82,6 +83,13 @@ export function ThreadView({ sidebarOpen }: { sidebarOpen: boolean }) {
         onLoadOlder={() => void thread.loadOlder()}
         footer={
           <>
+            <RunStatus
+              running={busy}
+              state={summary.run_state}
+              items={thread.transcript.items}
+              current={thread.currentTurn}
+              last={thread.lastTurn}
+            />
             <BackgroundTasks tasks={thread.backgroundTasks} onStop={(taskID) => void thread.stopTask(taskID)} />
             <InteractionPanel requests={thread.pending} onRespond={(request, decision) => void thread.respond(request, decision)} />
           </>

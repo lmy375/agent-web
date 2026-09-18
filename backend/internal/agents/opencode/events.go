@@ -162,6 +162,16 @@ func (b *Backend) onMessageUpdated(threadID string, properties json.RawMessage) 
 		if blocks := contentBlocks(t.take(payload.Info.ID)); len(blocks) > 0 {
 			b.deps.Publish(protocol.AssistantMessage(threadID, payload.Info.ID, blocks, nil))
 		}
+		t.mu.Lock()
+		clientMessageID, running := t.turn, !t.turnStarted.IsZero()
+		if spent := payload.Info.usage(); spent != nil && running {
+			t.turnUsage[payload.Info.ID] = *spent
+		}
+		total := t.spent()
+		t.mu.Unlock()
+		if running {
+			b.deps.Publish(protocol.TurnUsage(threadID, clientMessageID, total))
+		}
 	}
 	if payload.Info.Tokens != nil && payload.Info.Tokens.Total > 0 {
 		usage := protocol.ContextUsage{
@@ -324,6 +334,15 @@ func (t *thread) remember(p part) {
 }
 
 // take removes and returns one message's collected parts.
+// spent totals what this turn has cost so far. The caller holds the lock.
+func (t *thread) spent() protocol.Usage {
+	var total protocol.Usage
+	for _, one := range t.turnUsage {
+		total.Add(one)
+	}
+	return total
+}
+
 func (t *thread) take(messageID string) []part {
 	t.mu.Lock()
 	defer t.mu.Unlock()

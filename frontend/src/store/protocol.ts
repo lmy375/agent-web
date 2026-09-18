@@ -48,6 +48,18 @@ export interface TurnSummary {
   status: TurnStatus
   usage: Usage | null
   cost_usd: number | null
+  started_at: string
+  finished_at: string
+}
+
+/** The turn under way right now. The stream replays nothing on reconnect, so
+ *  this is how a reloaded page learns when the running turn began and what it
+ *  has spent. */
+export interface RunningTurn {
+  /** Empty for a turn the harness opened by itself. */
+  client_message_id: string
+  started_at: string
+  usage: Usage | null
 }
 
 /** One piece of work the harness carries outside a turn: a backgrounded shell
@@ -65,6 +77,7 @@ export interface ThreadDetail {
   summary: ThreadSummary
   pending: InteractionRequest[]
   context_usage: ContextUsage | null
+  current_turn: RunningTurn | null
   last_turn: TurnSummary | null
   background_tasks: BackgroundTask[]
 }
@@ -192,7 +205,8 @@ export type ServerEvent =
   | (EventBase & { type: 'thread_updated'; summary: ThreadSummary })
   | (EventBase & { type: 'thread_deleted' })
   | (EventBase & { type: 'context_usage'; usage: ContextUsage })
-  | (EventBase & { type: 'turn_started'; client_message_id: string })
+  | (EventBase & { type: 'turn_started'; client_message_id: string; started_at: string })
+  | (EventBase & { type: 'turn_usage'; client_message_id: string; usage: Usage })
   | (EventBase & { type: 'turn_finished'; client_message_id: string; summary: TurnSummary })
   | (EventBase & { type: 'user_message'; message_id: string; blocks: UserBlock[]; client_message_id: string | null; parent_tool_use_id: string | null })
   | (EventBase & { type: 'assistant_message'; message_id: string; blocks: ContentBlock[]; parent_tool_use_id: string | null })

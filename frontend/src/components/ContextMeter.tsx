@@ -2,7 +2,7 @@ import { localeTag } from '@/i18n/core'
 import { useI18n } from '@/i18n'
 import { Fragment } from 'react'
 import type { ContextUsage, TurnSummary } from '@/store/protocol'
-import { cn } from '@/lib/utils'
+import { cn, compactTokens } from '@/lib/utils'
 
 /**
  * How full the window is, as one ring the eye can read without stopping. The
@@ -30,7 +30,7 @@ export function ContextMeter({ usage, lastTurn, className }: { usage: ContextUsa
         {ratio !== null ? (
           <Ring ratio={ratio} />
         ) : usage ? (
-          <span>{t('tokenCount', { count: compact(usage.total_tokens) })}</span>
+          <span>{t('tokenCount', { count: compactTokens(usage.total_tokens) })}</span>
         ) : (
           <span>${cost!.toFixed(3)}</span>
         )}
@@ -62,7 +62,7 @@ export function ContextMeter({ usage, lastTurn, className }: { usage: ContextUsa
               </dl>
             )}
             {usage.auto_compact_threshold_tokens != null && (
-              <p className="mt-1.5 text-ink-faint">{t('autoCompactAt', { count: compact(usage.auto_compact_threshold_tokens) })}</p>
+              <p className="mt-1.5 text-ink-faint">{t('autoCompactAt', { count: compactTokens(usage.auto_compact_threshold_tokens) })}</p>
             )}
           </>
         )}
@@ -98,5 +98,3 @@ function Ring({ ratio }: { ratio: number }) {
     </svg>
   )
 }
-
-const compact = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n))

@@ -13,6 +13,13 @@ export function truncate(s: string, n = 80): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s
 }
 
+/** Token counts, short enough to sit in a status line: 940, 12k, 181.6k, 2.4M. */
+export function compactTokens(n: number): string {
+  if (n < 1000) return String(n)
+  const [value, unit] = n < 1_000_000 ? [n / 1000, 'k'] : [n / 1_000_000, 'M']
+  return String(Math.round(value * 10) / 10) + unit
+}
+
 /**
  * A harness spells its own knobs, so they arrive as parameter names --
  * `acceptEdits`, `on-request`, `permission-mode` -- which read as typos in a row

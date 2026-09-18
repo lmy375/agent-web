@@ -119,10 +119,27 @@ func BackgroundTaskFinished(threadID, taskID string, status TaskStatus, summary 
 type TurnStartedEvent struct {
 	EventBase
 	ClientMessageID string `json:"client_message_id"`
+	// StartedAt is when the session claimed the turn, which is earlier than Ts
+	// whenever the harness had to be started first: that wait is part of how
+	// long the turn took.
+	StartedAt time.Time `json:"started_at"`
 }
 
-func TurnStarted(threadID, clientMessageID string) TurnStartedEvent {
-	return TurnStartedEvent{newBase("turn_started", threadID), clientMessageID}
+func TurnStarted(threadID, clientMessageID string, startedAt time.Time) TurnStartedEvent {
+	return TurnStartedEvent{newBase("turn_started", threadID), clientMessageID, startedAt}
+}
+
+// TurnUsageEvent is what the running turn has spent so far. A harness reports
+// it per assistant message or per token-usage notification; the payload is the
+// whole turn's total, so a missed frame cannot leave the count short.
+type TurnUsageEvent struct {
+	EventBase
+	ClientMessageID string `json:"client_message_id"`
+	Usage           Usage  `json:"usage"`
+}
+
+func TurnUsage(threadID, clientMessageID string, u Usage) TurnUsageEvent {
+	return TurnUsageEvent{newBase("turn_usage", threadID), clientMessageID, u}
 }
 
 // TurnFinishedEvent closes it, carrying the prompt that opened the turn so a

@@ -149,6 +149,7 @@ type ThreadDetail struct {
 	Summary         ThreadSummary        `json:"summary"`
 	Pending         []InteractionRequest `json:"pending"`
 	ContextUsage    *ContextUsage        `json:"context_usage"`
+	CurrentTurn     *RunningTurn         `json:"current_turn"`
 	LastTurn        *TurnSummary         `json:"last_turn"`
 	BackgroundTasks []BackgroundTask     `json:"background_tasks"`
 }

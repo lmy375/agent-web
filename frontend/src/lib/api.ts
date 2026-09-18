@@ -71,7 +71,7 @@ export function subscribe(
   // Every event type is its own SSE event name, so one generic listener has to
   // be attached per name rather than to `message`.
   const names: ServerEvent['type'][] = [
-    'thread_updated', 'thread_deleted', 'context_usage', 'turn_started', 'turn_finished',
+    'thread_updated', 'thread_deleted', 'context_usage', 'turn_started', 'turn_usage', 'turn_finished',
     'user_message', 'assistant_message', 'text_delta', 'thinking_delta',
     'tool_use_start', 'tool_input_delta', 'tool_use_end', 'tool_output_delta', 'tool_result',
     'interaction_request', 'interaction_resolved', 'context_boundary',

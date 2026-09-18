@@ -27,10 +27,16 @@ type Options struct {
 }
 
 type thread struct {
-	mu           sync.Mutex
-	state        protocol.ThreadRunState
-	turn         string
-	interrupted  bool
+	mu          sync.Mutex
+	state       protocol.ThreadRunState
+	turn        string
+	interrupted bool
+	// turnStarted is when this turn was claimed; zero means none is running.
+	turnStarted time.Time
+	// turnUsage is each assistant message's accounting keyed by message id.
+	// OpenCode reports a message repeatedly as it settles, and the prompt call
+	// returns the same one again, so an id is overwritten rather than added.
+	turnUsage    map[string]protocol.Usage
 	pending      map[string]protocol.InteractionRequest
 	contextUsage *protocol.ContextUsage
 	lastTurn     *protocol.TurnSummary
@@ -51,7 +57,8 @@ type thread struct {
 func newThread() *thread {
 	return &thread{
 		state: protocol.StateIdle, pending: map[string]protocol.InteractionRequest{},
-		parts: map[string]string{}, assembling: map[string][]part{},
+		turnUsage: map[string]protocol.Usage{},
+		parts:     map[string]string{}, assembling: map[string][]part{},
 		blocks: map[string]map[string]int{}, tools: map[string]bool{},
 	}
 }
@@ -272,7 +279,15 @@ func (b *Backend) LiveState(threadID string) chat.LiveState {
 	for _, r := range t.pending {
 		pending = append(pending, r)
 	}
-	return chat.LiveState{Pending: pending, ContextUsage: t.contextUsage, LastTurn: t.lastTurn}
+	var current *protocol.RunningTurn
+	if !t.turnStarted.IsZero() {
+		spent := t.spent()
+		current = &protocol.RunningTurn{ClientMessageID: t.turn, StartedAt: t.turnStarted, Usage: &spent}
+	}
+	return chat.LiveState{
+		Pending: pending, ContextUsage: t.contextUsage,
+		CurrentTurn: current, LastTurn: t.lastTurn,
+	}
 }
 
 func (b *Backend) setState(threadID string, state protocol.ThreadRunState) {
@@ -321,9 +336,12 @@ func (b *Backend) Prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	t, _ := b.thread(rec.ThreadID)
 	t.mu.Lock()
 	t.turn, t.interrupted = cmd.ClientMessageID, false
+	t.turnStarted = time.Now().UTC()
+	t.turnUsage = map[string]protocol.Usage{}
+	started := t.turnStarted
 	t.mu.Unlock()
 
-	b.deps.Publish(protocol.TurnStarted(rec.ThreadID, cmd.ClientMessageID))
+	b.deps.Publish(protocol.TurnStarted(rec.ThreadID, cmd.ClientMessageID, started))
 	id := cmd.ClientMessageID
 	b.deps.Publish(protocol.UserMessage(rec.ThreadID, "prompt-"+id, echoBlocks(cmd), &id, nil))
 	b.setState(rec.ThreadID, protocol.StateRunning)
@@ -370,13 +388,21 @@ func (b *Backend) runTurn(server *serverProcess, rec chat.ThreadRecord, sessionI
 		}
 	}
 
-	summary := protocol.TurnSummary{Status: status, Usage: response.Info.usage()}
+	summary := protocol.TurnSummary{Status: status}
 	if response.Info.Cost > 0 {
 		cost := response.Info.Cost
 		summary.CostUSD = &cost
 	}
 	t.mu.Lock()
+	// The settled message also arrives over the event stream, so it is folded
+	// in by id: whichever of the two is second changes nothing.
+	if spent := response.Info.usage(); spent != nil {
+		t.turnUsage[response.Info.ID] = *spent
+	}
+	total := t.spent()
+	summary.Usage, summary.StartedAt, summary.FinishedAt = &total, t.turnStarted, time.Now().UTC()
 	t.lastTurn = &summary
+	t.turnStarted = time.Time{}
 	t.mu.Unlock()
 
 	b.deps.Publish(protocol.TurnFinished(rec.ThreadID, clientMessageID, summary))

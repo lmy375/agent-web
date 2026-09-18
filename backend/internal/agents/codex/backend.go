@@ -40,10 +40,13 @@ type Options struct {
 
 // thread is one conversation inside the shared app-server.
 type thread struct {
-	mu           sync.Mutex
-	state        protocol.ThreadRunState
-	turn         string // client_message_id of the running turn
-	turnID       string
+	mu     sync.Mutex
+	state  protocol.ThreadRunState
+	turn   string // client_message_id of the running turn
+	turnID string
+	// turnStarted is when this turn was claimed; zero means none is running,
+	// which is what liveState reports a running turn from.
+	turnStarted  time.Time
 	interrupted  bool
 	pending      map[string]*approval
 	contextUsage *protocol.ContextUsage
@@ -263,7 +266,14 @@ func (b *Backend) LiveState(threadID string) chat.LiveState {
 	for _, a := range t.pending {
 		pending = append(pending, a.request)
 	}
-	return chat.LiveState{Pending: pending, ContextUsage: t.contextUsage, LastTurn: t.lastTurn}
+	var current *protocol.RunningTurn
+	if !t.turnStarted.IsZero() {
+		current = &protocol.RunningTurn{ClientMessageID: t.turn, StartedAt: t.turnStarted, Usage: t.lastUsage}
+	}
+	return chat.LiveState{
+		Pending: pending, ContextUsage: t.contextUsage,
+		CurrentTurn: current, LastTurn: t.lastTurn,
+	}
 }
 
 func (b *Backend) setState(threadID string, state protocol.ThreadRunState) {
@@ -306,6 +316,7 @@ func (b *Backend) Prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 	t, _ := b.thread(rec.ThreadID)
 	t.mu.Lock()
 	t.turn, t.interrupted = cmd.ClientMessageID, false
+	t.turnStarted = time.Now().UTC()
 	t.mu.Unlock()
 
 	params := map[string]any{
@@ -324,7 +335,7 @@ func (b *Backend) Prompt(ctx context.Context, rec chat.ThreadRecord, cmd protoco
 
 	if err := server.call(ctx, "turn/start", params, nil); err != nil {
 		t.mu.Lock()
-		t.turn = ""
+		t.turn, t.turnStarted = "", time.Time{}
 		t.mu.Unlock()
 		return protocol.Errorf(protocol.CodeAgentUnavailable, "turn/start failed: %v", err)
 	}

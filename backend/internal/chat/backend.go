@@ -18,6 +18,7 @@ import (
 type LiveState struct {
 	Pending         []protocol.InteractionRequest
 	ContextUsage    *protocol.ContextUsage
+	CurrentTurn     *protocol.RunningTurn
 	LastTurn        *protocol.TurnSummary
 	BackgroundTasks []protocol.BackgroundTask
 }
