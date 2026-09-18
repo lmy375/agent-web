@@ -12,6 +12,7 @@ const (
 	KindClaudeCode AgentKind = "claude_code" // `claude -p --input-format stream-json`
 	KindCodex      AgentKind = "codex"       // `codex app-server`, one process, many threads
 	KindOpenCode   AgentKind = "opencode"    // `opencode serve`, HTTP + SSE
+	KindPi         AgentKind = "pi"          // `pi --mode rpc`, one process per thread, JSON lines
 )
 
 // ThreadRunState is the directory row's live state. A dead harness process is

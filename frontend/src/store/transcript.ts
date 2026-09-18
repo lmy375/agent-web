@@ -163,7 +163,7 @@ function localEcho(items: Item[], clientMessageID: string) {
  * A cold harness takes seconds to start and cannot echo the prompt until it
  * has, so waiting for the echo leaves the composer cleared and the screen
  * unchanged. The id is the one claude_code and opencode will echo, so `seen`
- * settles those two on its own; codex renames it and is claimed by
+ * settles those two on its own; codex and pi rename it and are claimed by
  * `client_message_id` instead.
  */
 export function localPrompt(t: Transcript, clientMessageID: string, blocks: UserBlock[]): Transcript {

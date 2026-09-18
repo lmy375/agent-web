@@ -19,12 +19,13 @@ type Config struct {
 	ClaudePath   string
 	CodexPath    string
 	OpenCodePath string
+	PiPath       string
 	// Long-lived token from `claude setup-token`, forwarded to the subprocess.
 	ClaudeOAuthToken string
 	// Seconds an idle harness process is kept before it is stopped; the next
 	// prompt resumes the thread from its transcript.
 	IdleTimeoutS int
-	// Which kinds to expose, in order. Empty means all three.
+	// Which kinds to expose, in order. Empty means all of them.
 	Agents []string
 
 	Host string
@@ -48,6 +49,7 @@ func Load() Config {
 		ClaudePath:       env("CLAUDE_PATH", ""),
 		CodexPath:        env("CODEX_PATH", ""),
 		OpenCodePath:     env("OPENCODE_PATH", ""),
+		PiPath:           env("PI_PATH", ""),
 		ClaudeOAuthToken: env("CLAUDE_OAUTH_TOKEN", ""),
 		IdleTimeoutS:     envInt("IDLE_TIMEOUT_S", 900),
 		Agents:           envList("AGENTS", nil),

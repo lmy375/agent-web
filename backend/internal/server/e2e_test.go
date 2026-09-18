@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/lmy375/agent-web/backend/internal/agents/claudecode"
+	"github.com/lmy375/agent-web/backend/internal/agents/pi"
 	"github.com/lmy375/agent-web/backend/internal/chat"
 	"github.com/lmy375/agent-web/backend/internal/config"
 	"github.com/lmy375/agent-web/backend/internal/protocol"
@@ -29,23 +30,41 @@ func TestClaudeCodeTurn(t *testing.T) {
 		t.Skip("set AGENT_WEB_E2E=1 to run the live harness test")
 	}
 	work := t.TempDir()
-	http := newHarness(t, work)
+	roundTrip(t, newHarness(t, work, claudeCode), protocol.KindClaudeCode, work)
+}
+
+// TestPiTurn is the same round trip through a real `pi --mode rpc` subprocess.
+func TestPiTurn(t *testing.T) {
+	if os.Getenv("AGENT_WEB_E2E") == "" {
+		t.Skip("set AGENT_WEB_E2E=1 to run the live harness test")
+	}
+	work := t.TempDir()
+	roundTrip(t, newHarness(t, work, func(work string, deps chat.Deps) chat.Backend {
+		return pi.New(pi.Options{DefaultCwd: work, IdleTimeout: 15 * time.Minute}, deps)
+	}), protocol.KindPi, work)
+}
+
+// roundTrip is one turn against whichever harness the server was built with:
+// the descriptor is usable, a thread is created, the stream is opened before
+// the prompt, and the settled transcript agrees with what was streamed.
+func roundTrip(t *testing.T, http *harness, kind protocol.AgentKind, work string) {
+	t.Helper()
 
 	// A descriptor has to arrive before anything else can be rendered.
 	var agents []protocol.AgentDescriptor
 	http.get(t, "/api/agents", &agents)
-	if len(agents) != 1 || agents[0].Kind != protocol.KindClaudeCode {
-		t.Fatalf("expected one claude_code descriptor, got %+v", agents)
+	if len(agents) != 1 || agents[0].Kind != kind {
+		t.Fatalf("expected one %s descriptor, got %+v", kind, agents)
 	}
 	if reason := agents[0].Runtime.UnavailableReason; reason != nil {
-		t.Fatalf("claude is unavailable: %s", *reason)
+		t.Fatalf("%s is unavailable: %s", kind, *reason)
 	}
 	if len(agents[0].Runtime.Models) == 0 {
-		t.Fatal("the initialize probe returned no models")
+		t.Fatal("the probe returned no models")
 	}
 
 	var thread protocol.ThreadSummary
-	http.post(t, "/api/threads", map[string]any{"agent_kind": "claude_code", "cwd": work}, &thread)
+	http.post(t, "/api/threads", map[string]any{"agent_kind": kind, "cwd": work}, &thread)
 	if thread.Cwd == "" || thread.RunState != protocol.StateIdle {
 		t.Fatalf("unexpected new thread: %+v", thread)
 	}
@@ -118,7 +137,7 @@ func TestClaudeCodeLocalCommandHistory(t *testing.T) {
 		t.Skip("set AGENT_WEB_E2E=1 to run the live harness test")
 	}
 	work := t.TempDir()
-	http := newHarness(t, work)
+	http := newHarness(t, work, claudeCode)
 	var thread protocol.ThreadSummary
 	http.post(t, "/api/threads", map[string]any{"agent_kind": "claude_code", "cwd": work}, &thread)
 	path := "/api/threads/" + thread.ThreadID
@@ -193,7 +212,13 @@ stream:
 
 type harness struct{ server *httptest.Server }
 
-func newHarness(t *testing.T, work string) *harness {
+func claudeCode(work string, deps chat.Deps) chat.Backend {
+	return claudecode.New(claudecode.Options{DefaultCwd: work, IdleTimeout: 15 * time.Minute}, deps)
+}
+
+// newHarness serves the whole stack over one backend, built by the caller so
+// each live test names the harness it drives.
+func newHarness(t *testing.T, work string, backend func(work string, deps chat.Deps) chat.Backend) *harness {
 	t.Helper()
 	cfg := config.Config{RootDir: work, DataDir: filepath.Join(work, "state"), IdleTimeoutS: 900}
 	registry, err := chat.NewRegistry(filepath.Join(cfg.DataDir, "threads.db"))
@@ -203,9 +228,7 @@ func newHarness(t *testing.T, work string) *harness {
 	t.Cleanup(func() { _ = registry.Close() })
 	hub := chat.NewHub()
 	deps := chat.Deps{Publish: hub.Publish, Registry: registry}
-	svc := chat.NewService(registry, hub, claudecode.New(claudecode.Options{
-		DefaultCwd: work, IdleTimeout: 15 * time.Minute,
-	}, deps))
+	svc := chat.NewService(registry, hub, backend(work, deps))
 	t.Cleanup(svc.Close)
 	ts := httptest.NewServer(server.New(cfg, svc))
 	t.Cleanup(ts.Close)

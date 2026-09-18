@@ -2,6 +2,7 @@ import { Bot } from 'lucide-react'
 import claudeCodeIcon from '@/assets/agents/claude-code.svg'
 import codexIcon from '@/assets/agents/codex.svg'
 import opencodeIcon from '@/assets/agents/opencode.svg'
+import piIcon from '@/assets/agents/pi.svg'
 import type { AgentKind } from '@/store/protocol'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +15,7 @@ const marks: Record<AgentKind, { src: string; label: string }> = {
   claude_code: { src: claudeCodeIcon, label: 'Claude Code' },
   codex: { src: codexIcon, label: 'Codex' },
   opencode: { src: opencodeIcon, label: 'OpenCode' },
+  pi: { src: piIcon, label: 'Pi' },
 }
 
 export function AgentMark({ kind, label, className }: { kind: AgentKind; label?: string; className?: string }) {

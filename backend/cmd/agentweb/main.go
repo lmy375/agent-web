@@ -17,6 +17,7 @@ import (
 	"github.com/lmy375/agent-web/backend/internal/agents/claudecode"
 	"github.com/lmy375/agent-web/backend/internal/agents/codex"
 	"github.com/lmy375/agent-web/backend/internal/agents/opencode"
+	"github.com/lmy375/agent-web/backend/internal/agents/pi"
 	"github.com/lmy375/agent-web/backend/internal/chat"
 	"github.com/lmy375/agent-web/backend/internal/config"
 	"github.com/lmy375/agent-web/backend/internal/protocol"
@@ -78,7 +79,7 @@ func main() {
 func buildBackends(cfg config.Config, deps chat.Deps) []chat.Backend {
 	wanted := cfg.Agents
 	if len(wanted) == 0 {
-		wanted = []string{string(protocol.KindClaudeCode), string(protocol.KindCodex), string(protocol.KindOpenCode)}
+		wanted = []string{string(protocol.KindClaudeCode), string(protocol.KindCodex), string(protocol.KindOpenCode), string(protocol.KindPi)}
 	}
 	idle := time.Duration(cfg.IdleTimeoutS) * time.Second
 	backends := []chat.Backend{}
@@ -96,6 +97,10 @@ func buildBackends(cfg config.Config, deps chat.Deps) []chat.Backend {
 		case protocol.KindOpenCode:
 			backends = append(backends, opencode.New(opencode.Options{
 				Bin: cfg.OpenCodePath, DefaultCwd: cfg.RootDir, IdleTimeout: idle,
+			}, deps))
+		case protocol.KindPi:
+			backends = append(backends, pi.New(pi.Options{
+				Bin: cfg.PiPath, DefaultCwd: cfg.RootDir, IdleTimeout: idle,
 			}, deps))
 		default:
 			log.Fatalf("unknown agent kind %q in AGENT_WEB_AGENTS", kind)

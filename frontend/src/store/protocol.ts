@@ -4,7 +4,7 @@
  * check on `agent_kind` anywhere outside the identity chip is a defect.
  */
 
-export type AgentKind = 'claude_code' | 'codex' | 'opencode'
+export type AgentKind = 'claude_code' | 'codex' | 'opencode' | 'pi'
 export type RunState = 'starting' | 'idle' | 'running' | 'waiting_input' | 'background'
 export type TaskStatus = 'completed' | 'failed' | 'stopped'
 export type TurnStatus = 'completed' | 'interrupted' | 'failed'

@@ -2,9 +2,9 @@
 
 A remote, browser-based UI for the coding agents installed on one machine.
 Today that is [Claude Code](https://docs.anthropic.com/en/docs/claude-code),
-[Codex](https://developers.openai.com/codex/cli) and
-[OpenCode](https://opencode.ai) — different processes, different wire protocols,
-one chat.
+[Codex](https://developers.openai.com/codex/cli),
+[OpenCode](https://opencode.ai) and [Pi](https://github.com/earendil-works/pi) —
+different processes, different wire protocols, one chat.
 
 Single user, no accounts. Run it on localhost or behind a private network / VPN.
 
@@ -15,7 +15,8 @@ Single user, no accounts. Run it on localhost or behind a private network / VPN.
 │                      │ ◄────────────────────────────── │     │        + one thread list   │
 │                      │  SSE   /api/events (directory)  │     ├── claudecode ── claude ────┼─► stream-json stdio
 └──────────────────────┘                                 │     ├── codex ─────── codex ────┼─► JSON-RPC stdio
-                                                         │     └── opencode ──── opencode ─┼─► HTTP + SSE
+                                                         │     ├── opencode ──── opencode ─┼─► HTTP + SSE
+                                                         │     └── pi ────────── pi ───────┼─► JSON lines stdio
                                                          └──────────────────────────────────┘
 ```
 
@@ -24,7 +25,8 @@ Single user, no accounts. Run it on localhost or behind a private network / VPN.
 Every harness has its own idea of a conversation: Claude Code is one subprocess
 per session speaking newline JSON, Codex is a single `app-server` multiplexing
 every thread over JSON-RPC, OpenCode is an HTTP server you talk to like any
-other API. Behind all three is the same shape — a turn, streamed text and
+other API, Pi is again one subprocess per session, answering each command by
+the id it was sent with. Behind all four is the same shape — a turn, streamed text and
 reasoning, tool calls with results, and the moments where the agent stops and
 asks you something.
 
@@ -61,12 +63,13 @@ works: the same transcript, the same permission card, the same composer.
 | Claude Code | `npm i -g @anthropic-ai/claude-code` | `claude login` | `claude auth status` | 2.1.270 |
 | Codex | `npm i -g @openai/codex` | `codex login` | `codex doctor` | 0.153.2 |
 | OpenCode | `npm i -g opencode-ai` | `opencode auth login` | `opencode models` | 1.18.31 |
+| Pi | `npm i -g @earendil-works/pi-coding-agent` | `pi`, then `/login` | `pi --list-models` | 0.85.1 |
 
 An agent that is missing or signed out still appears in the UI, greyed out with
 the reason — the others keep working.
 
 **Built against** is the version each adapter was written and verified on. None
-of the three publishes a stable wire protocol: flags, JSON-RPC notification
+of the four publishes a stable wire protocol: flags, JSON-RPC notification
 names and event fields move between releases, and the adapters read them
 directly. So a much newer CLI usually keeps working and loses one specific thing
 quietly — reasoning stops appearing, a tool card stops being drawn — rather than
@@ -110,8 +113,9 @@ list and its own knobs — so an agent with no reasoning knob shows one control
 fewer, and picking a different agent redraws the row instead of carrying over a
 value that means nothing to it. The knobs are the harness's: Claude Code offers
 `permission-mode` and `effort`, Codex offers `approvalPolicy` and `sandbox`
-separately because that is how the app-server asks, and OpenCode offers the
-`agent` list its own config defines. Every option defaults to what that agent
+separately because that is how the app-server asks, OpenCode offers the
+`agent` list its own config defines, and Pi offers `thinking`, the level
+`pi --thinking` takes. Every option defaults to what that agent
 reports and can be changed later from the composer.
 
 The working directory is the one choice a thread cannot revisit, so the dialog
@@ -152,8 +156,8 @@ Environment variables prefixed `AGENT_WEB_`, read from the environment or from a
 | --- | --- | --- |
 | `AGENT_WEB_ROOT_DIR` | `~/agent-web-workspace` | Default working directory for new threads; the picker can choose any other |
 | `AGENT_WEB_DATA_DIR` | `~/.agent-web` | Thread registry and auth secret |
-| `AGENT_WEB_AGENTS` | all | Comma-separated kinds to expose, in order: `claude_code,codex,opencode` |
-| `AGENT_WEB_CLAUDE_PATH` / `CODEX_PATH` / `OPENCODE_PATH` | on `PATH` | Explicit harness binaries |
+| `AGENT_WEB_AGENTS` | all | Comma-separated kinds to expose, in order: `claude_code,codex,opencode,pi` |
+| `AGENT_WEB_CLAUDE_PATH` / `CODEX_PATH` / `OPENCODE_PATH` / `PI_PATH` | on `PATH` | Explicit harness binaries |
 | `AGENT_WEB_CLAUDE_OAUTH_TOKEN` | unset | Token from `claude setup-token`, when there is no `claude login` |
 | `AGENT_WEB_IDLE_TIMEOUT_S` | `900` | Seconds before an idle harness process is stopped |
 | `AGENT_WEB_HOST` / `AGENT_WEB_PORT` | `127.0.0.1` / `8000` | Bind address |
@@ -233,6 +237,11 @@ is exactly where a permission prompt would be.
 - [backend/internal/agents/opencode](backend/internal/agents/opencode) — a
   hosted `opencode serve`, one SSE subscription for all threads, `?directory=`
   scoping each call to its thread's project.
+- [backend/internal/agents/pi](backend/internal/agents/pi) — `pi --mode rpc`,
+  one subprocess per live thread, one JSON object per line each way, every
+  command answered by id. A new thread pins pi's session id to its own; a
+  reaped thread reopens the session file pi named with `--session`, and
+  history is read straight from that file.
 - [frontend/src/store/transcript.ts](frontend/src/store/transcript.ts) — folds
   live events and replayed history through one function, which is why a reload
   renders exactly what the stream did.
@@ -244,7 +253,7 @@ Three design decisions worth calling out:
    carries directory events for every thread at once.
 2. **One registry, not one per backend.** Each harness can list its own threads
    natively, but the directory only ever shows threads this UI created, so a
-   single shared registry replaces three near-identical implementations and
+   single shared registry replaces four near-identical implementations and
    makes the union list a sort rather than a merge.
 3. **A single-password gate instead of per-user identity**, and `cwd` validated
    as "absolute, exists, is a directory" rather than against a fixed set of
@@ -260,6 +269,11 @@ Three design decisions worth calling out:
   `bypassPermissions` because that is the word the CLI takes, and a word that
   reads the same in the UI and in `claude --help` is worth more than a pretty
   one that reads the same on no harness at all.
+- Pi has no tool approval of its own: `read`, `bash`, `edit` and `write` run
+  with the backend's permissions the moment the model calls them, in the
+  browser exactly as in a terminal, so a Pi thread never shows a permission
+  card. Dialogs raised by Pi extensions the owner has installed (`select`,
+  `confirm`, `input`, `editor`) do reach the browser, as questions.
 - One turn runs per thread at a time. A prompt sent while a turn is running is
   refused with `thread_busy`; press Stop first, or steer if the agent supports it.
 - A prompt carries a ULID. Re-sending the same one is a no-op, and the same id
@@ -267,8 +281,8 @@ Three design decisions worth calling out:
   cannot double a turn. The ledger lives in memory: a restart forgets it, which
   costs one duplicated turn at worst, never a lost one.
 - A thread's working directory is fixed when it is created. Claude Code stores
-  its transcript under a hash of that path, so moving a thread would orphan its
-  history.
+  its transcript under a hash of that path and Pi under a folder named after
+  it, so moving a thread would orphan its history.
 - Live state is live. Pending interactions, context usage and the last turn's
   cost come from the running harness, so they are empty again after a server
   restart, while the transcript is not.
