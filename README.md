@@ -81,18 +81,18 @@ drives Claude Code against the real CLI.
 
 ## Quick start
 
-Two processes, hot reload:
+Development, both sides reloading:
 
 ```bash
-cd backend && cp .env.example .env && go run ./cmd/agentweb
+./dev.sh
 ```
 
-```bash
-cd frontend && pnpm install && pnpm dev
-```
-
-Open http://localhost:5173. Vite proxies `/api` to the backend on port 8000
-(override with `BACKEND_URL`).
+Open http://localhost:5173. The script installs the frontend dependencies the
+first time, runs Vite with its own module replacement, and rebuilds and
+restarts the backend whenever a Go file changes — a build that fails leaves the
+running server up and prints the compiler's output. Vite proxies `/api` to the
+backend on `AGENT_WEB_PORT` (default 8000); a port already in use stops the
+script and names what holds it. Ctrl-C stops both sides.
 
 One process:
 
